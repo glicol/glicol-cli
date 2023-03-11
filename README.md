@@ -6,7 +6,7 @@ https://youtu.be/f4oR94v5vEg
 
 ## What's this?
 
-It's a command line tool that you can use for music live coding with Glicol.
+It's a command line tool that you can use for music live coding with [Glicol](https://glicol.org).
 
 It watches a file changes and then update the music in real-time.
 
