@@ -187,6 +187,7 @@ where
             code = "".to_owned();
             for line in reader.lines() {
                 code.push_str(&line?);
+                code.push_str("\n");
                 // println!("{}", code);
             }
             code_ptr.store(unsafe {code.as_bytes_mut().as_mut_ptr() }, Ordering::SeqCst);
