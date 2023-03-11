@@ -1,5 +1,9 @@
 # glicol-cli
 
+Demo video:
+
+https://youtu.be/f4oR94v5vEg
+
 ## What's this?
 
 It's a command line tool that you can use for music live coding with Glicol.
@@ -36,6 +40,6 @@ out: mix ~t.. >> plate 0.1
 
 ## Todos
 
-- [] Error handling
-- [] Remove unnecessary print
-- [] Linux/Windows test; PR welcomed!
+- [ ] Error handling
+- [ ] Remove unnecessary print
+- [ ] Linux/Windows test; PR welcomed!
