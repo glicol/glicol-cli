@@ -42,4 +42,5 @@ out: mix ~t.. >> plate 0.1
 
 - [ ] Error handling
 - [ ] Remove unnecessary print
+- [ ] Support sample adding!
 - [ ] Linux/Windows test; PR welcomed!
