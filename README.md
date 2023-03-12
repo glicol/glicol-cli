@@ -1,5 +1,7 @@
 # glicol-cli
 
+![Demo](./glicol-cli.png)
+
 Demo video:
 
 https://youtu.be/1Gu6EU0eBNo
