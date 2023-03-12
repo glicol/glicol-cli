@@ -8,4 +8,4 @@
 // ~t3: speed 4.0 >> seq 60 61 61 63
 // >> hh 0.02 >> mul 0.4
 
-out: mix ~t.. >> plate 0.1
+out: mix ~t.. >> mul 1 >> plate 0.1
