@@ -3,7 +3,7 @@ use clap::Parser;
 
 use std::fs::{File, metadata};
 use std::io::{BufRead, BufReader};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -13,6 +13,8 @@ use cpal::{
 use glicol::Engine;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, AtomicBool, AtomicPtr, Ordering};
+
+use chrono::{DateTime, Utc};
 
 /// millisecond duration to watch the changes
 // #[arg(short, long)]
@@ -188,8 +190,16 @@ where
             for line in reader.lines() {
                 code.push_str(&line?);
                 code.push_str("\n");
-                // println!("{}", code);
             }
+            let current_time = SystemTime::now();
+            let unix_time = current_time.duration_since(UNIX_EPOCH)
+                .expect("Time went backwards");
+            let system_time = UNIX_EPOCH + unix_time;
+            let datetime = DateTime::<Utc>::from(system_time);
+            println!("```");
+            println!("\n// utc time: {} \n", datetime.format("%Y-%m-%d %H:%M:%S").to_string());
+            println!("{}", code);
+            println!("```");
             code_ptr.store(unsafe {code.as_bytes_mut().as_mut_ptr() }, Ordering::SeqCst);
             code_len.store(code.len(), Ordering::SeqCst);
             has_update.store(true, Ordering::SeqCst);

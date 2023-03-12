@@ -8,8 +8,9 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.1.8", features = ["derive"] }
-glicol = "0.12.8"
+glicol = "0.13.1"
 cpal =  "0.15.0"
+chrono = "0.4.23"
 
 # jack = { version = "0.11", optional = true }
 # [features]
