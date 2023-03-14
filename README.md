@@ -1,10 +1,6 @@
 # glicol-cli
 
-![Demo](./glicol-cli.png)
-
-Demo video:
-
-https://youtu.be/1Gu6EU0eBNo
+https://user-images.githubusercontent.com/35621141/225077562-5f947d3b-7a1c-4f78-aa27-3d5b776288f4.mp4
 
 ## What's this?
 
