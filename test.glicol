@@ -1,0 +1,11 @@
+~t1: speed 4.0 >> seq 60 >> bd 0.2 >> mul 0.6
+    
+~t2: seq 33_33_ _33 33__33 _33
+>> mul 1.0
+>> sawsynth 0.01 0.1
+>> mul 0.5 >> lpf 1000.0 1.0
+
+// ~t3: speed 4.0 >> seq 60 61 61 63
+// >> hh 0.02 >> mul 0.4
+
+out: mix ~t.. >> mul 1 >> plate 0.1
