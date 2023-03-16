@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    FromSample, Sample, SizedSample,
+    FromSample, SizedSample,
 };
 
 use glicol::Engine;
@@ -25,7 +25,7 @@ use chrono::{DateTime, Utc};
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// path to the .glicol file
-    #[arg(short, long, index=1)]
+    #[arg(index=1)]
     file: String,
 
     /// The audio device to use
