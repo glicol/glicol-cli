@@ -16,6 +16,26 @@ use std::sync::atomic::{AtomicUsize, AtomicBool, AtomicPtr, Ordering};
 
 use chrono::{DateTime, Utc};
 
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+
+use tui::{
+    backend::{Backend, CrosstermBackend},
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
+    widgets::{Block, Borders, Sparkline},
+    Frame, Terminal,
+};
+
+use std::{
+    error::Error,
+    io,
+    time::{Instant},
+};
+
 /// millisecond duration to watch the changes
 // #[arg(short, long)]
 // dur: u64,

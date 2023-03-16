@@ -11,6 +11,8 @@ clap = { version = "4.1.8", features = ["derive"] }
 glicol = "0.13.1"
 cpal =  "0.15.0"
 chrono = "0.4.23"
+crossterm = "*"
+tui = "*"
 
 # jack = { version = "0.11", optional = true }
 # [features]
