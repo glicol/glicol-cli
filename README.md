@@ -38,7 +38,7 @@ out: mix ~t.. >> plate 0.1
 
 ## Todos
 
-- [ ] Error handling
+- [ ] Error handling (so far when there is an error, the previous music continues but no report)
 - [x] Remove unnecessary print
 - [ ] Support sample adding!
 - [ ] Linux/Windows test; PR welcomed!
