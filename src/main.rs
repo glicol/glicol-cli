@@ -235,7 +235,8 @@ where
                 _has_update.store(false, Ordering::Release);
             };
 
-            let blocks_needed = data.len() / 2 / BLOCK_SIZE;
+            let block_step = data.len() / channels;
+            let blocks_needed = block_step / BLOCK_SIZE;
             let block_step = channels * BLOCK_SIZE;
             let mut rms: Vec<f32> = vec![0.0; channels];
             for current_block in 0..blocks_needed {
@@ -248,7 +249,7 @@ where
                     }
                 }
             }
-            rms = rms.into_iter().map(|x| (x/512.0).sqrt() ).collect();
+            rms = rms.into_iter().map(|x| (x / block_step as f32).sqrt() ).collect();
             // left rms[0] right rms[1]
 
             let ptr_l = ringbuf_l.load(Ordering::SeqCst);
