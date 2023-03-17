@@ -620,6 +620,7 @@ dependencies = [
  "clap",
  "cpal",
  "crossterm 0.26.1",
+ "dasp_ring_buffer",
  "glicol",
  "tui",
 ]

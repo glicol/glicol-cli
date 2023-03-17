@@ -1,27 +1,22 @@
-use anyhow::Result;
-use clap::Parser;
-
 use std::fs::{File, metadata};
 use std::io::{BufRead, BufReader};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-    FromSample, SizedSample,
-};
-
-use glicol::Engine;
+use std::time::{Instant, Duration, SystemTime, UNIX_EPOCH};
+use std::error::Error;
+use std::{io, thread}; // use std::time::{Instant};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, AtomicBool, AtomicPtr, Ordering};
 
+use anyhow::Result;
+use clap::Parser;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, SizedSample};
+use glicol::Engine;
 use chrono::{DateTime, Utc};
-
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
@@ -30,122 +25,105 @@ use tui::{
     Frame, Terminal,
 };
 
-use std::{
-    error::Error,
-    io,
-    time::{Instant},
-};
-
-/// millisecond duration to watch the changes
-// #[arg(short, long)]
-// dur: u64,
-
-/// Glicol cli tool. This tool will watch the changes in a .glicol file.
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// path to the .glicol file
-    #[arg(index=1)]
-    file: String,
-
-    /// The audio device to use
-    #[arg(short, long, default_value_t = String::from("default"))]
-    device: String,
-
-    /// Use the JACK host
-    #[cfg(all(
-        any(
-            target_os = "linux",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "netbsd"
-        ),
-        feature = "jack"
-    ))]
-    #[arg(short, long)]
-    #[allow(dead_code)]
-    jack: bool,
-}
-
+const RB_SIZE: usize = 100;
 const BLOCK_SIZE: usize = 128;
 
-fn main() -> Result<()> {
-    let args = Args::parse();
+fn main() -> Result<(), Box<dyn Error>> {
+    // setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-    let path = args.file;
-    // let path = args.file;
-    // let dur = args.dur;
-    let device = args.device;
+    let mut ringbuf_l = [0.0; RB_SIZE];
+    let mut ringbuf_r = [0.0; RB_SIZE];
+    let mut index = Arc::new(AtomicUsize::new(0));
+    // let mut index_r = Arc::new(AtomicUsize::new(0));
+    let index_clone = Arc::clone(&index);
+    // let _index_r = Arc::clone(&index_r);
+    let ptr_rb_left = Arc::new(AtomicPtr::<f32>::new( ringbuf_l.as_mut_ptr()));
+    let ptr_rb_right = Arc::new(AtomicPtr::<f32>::new( ringbuf_r.as_mut_ptr()));
+    let ptr_rb_left_clone = Arc::clone(&ptr_rb_left);
+    let ptr_rb_right_clone = Arc::clone(&ptr_rb_right);
 
-    // Conditionally compile with jack if the feature is specified.
-    #[cfg(all(
-        any(
-            target_os = "linux",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "netbsd"
-        ),
-        feature = "jack"
-    ))]
-    let host = if args.jack {
-        cpal::host_from_id(cpal::available_hosts()
-            .into_iter()
-            .find(|id| *id == cpal::HostId::Jack)
-            .expect(
-                "make sure --features jack is specified. only works on OSes where jack is available",
-            )).expect("jack host unavailable")
-    } else {
-        cpal::default_host()
-    };
+    let audio_thread = thread::spawn(move || {
+        // let opt = Opt::parse();
+        let host = cpal::default_host();
+        let device = host.default_output_device().expect("failed to find output device");
+        let config = device.default_output_config().unwrap();
+        match config.sample_format() {
+            // ... other sample formats ...
+            cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), ptr_rb_left_clone, index_clone),
+            _ => unimplemented!(),
+        }
+    });
 
-    #[cfg(any(
-        not(any(
-            target_os = "linux",
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "netbsd"
-        )),
-        not(feature = "jack")
-    ))]
-    let host = cpal::default_host();
+    let tick_rate = Duration::from_millis(10);
+    let res = run_app(&mut terminal, tick_rate, ptr_rb_left, index);
 
-    let device = if device == "default" {
-        host.default_output_device()
-    } else {
-        host.output_devices()?
-            .find(|x| x.name().map(|y| y == device).unwrap_or(false))
-    }
-    .expect("failed to find output device");
-    println!("Output device: {}", device.name()?);
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
 
-    let config = device.default_output_config().unwrap();
-    println!("Default output config: {:?}", config);
-
-    match config.sample_format() {
-        cpal::SampleFormat::I8 => run::<i8>(&device, &config.into(), path),
-        cpal::SampleFormat::I16 => run::<i16>(&device, &config.into(), path),
-        // cpal::SampleFormat::I24 => run::<I24>(&device, &config.into()),
-        cpal::SampleFormat::I32 => run::<i32>(&device, &config.into(), path),
-        // cpal::SampleFormat::I48 => run::<I48>(&device, &config.into()),
-        cpal::SampleFormat::I64 => run::<i64>(&device, &config.into(), path),
-        cpal::SampleFormat::U8 => run::<u8>(&device, &config.into(), path),
-        cpal::SampleFormat::U16 => run::<u16>(&device, &config.into(), path),
-        // cpal::SampleFormat::U24 => run::<U24>(&device, &config.into()),
-        cpal::SampleFormat::U32 => run::<u32>(&device, &config.into(), path),
-        // cpal::SampleFormat::U48 => run::<U48>(&device, &config.into()),
-        cpal::SampleFormat::U64 => run::<u64>(&device, &config.into(), path),
-        cpal::SampleFormat::F32 => run::<f32>(&device, &config.into(), path),
-        cpal::SampleFormat::F64 => run::<f64>(&device, &config.into(), path),
-        sample_format => panic!("Unsupported sample format '{sample_format}'"),
+    if let Err(err) = res {
+        println!("{:?}", err)
     }
 
+    audio_thread.join().unwrap();
+
+    Ok(())
 }
 
-pub fn run<T>(device: &cpal::Device, config: &cpal::StreamConfig, path: String) -> Result<(), anyhow::Error>
+fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>, 
+    tick_rate: Duration, 
+    left: Arc<AtomicPtr<f32>>, 
+    index: Arc<AtomicUsize>,
+    // right: Arc<AtomicPtr<f32>>
+) -> io::Result<()> {
+    let mut last_tick = Instant::now();
+
+    loop {
+        terminal.draw(|f| ui(f, &left, &index))?;
+
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+
+        if crossterm::event::poll(timeout)? {
+            if let Event::Key(key) = event::read()? {
+                if let KeyCode::Char('q') = key.code {
+                    return Ok(());
+                }
+            }
+        }
+
+        if last_tick.elapsed() >= tick_rate {
+            // app.on_tick();
+            last_tick = Instant::now();
+        }
+    }
+}
+
+// , play_audio: Arc<AtomicBool>
+pub fn run_audio<T>(
+    device: &cpal::Device, 
+    config: &cpal::StreamConfig, 
+    ringbuf_l: Arc<AtomicPtr<f32>>, 
+    // ringbuf_r: Arc<AtomicPtr<f32>>,
+    index: Arc<AtomicUsize>,
+    // index_r: Arc<AtomicUsize>,
+) -> Result<(), anyhow::Error>
 where
     T: SizedSample + FromSample<f32>,
 {
-
+    let path = "1.glicol".to_owned();
     let mut last_modified_time = metadata(&path)?.modified()?;
 
     let sr = config.sample_rate.0 as usize;
@@ -171,8 +149,7 @@ where
     let stream = device.build_output_stream(
         config,
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-            
-
+        
             if _has_update.load(Ordering::Acquire) {
                 let ptr = _code_ptr.load(Ordering::Acquire);
                 let len = _code_len.load(Ordering::Acquire);
@@ -184,15 +161,27 @@ where
 
             let blocks_needed = data.len() / 2 / BLOCK_SIZE;
             let block_step = channels * BLOCK_SIZE;
+            let mut rms: Vec<f32> = vec![0.0; channels];
             for current_block in 0..blocks_needed {
                 let (block, _err_msg) = engine.next_block(vec![]);
                 for i in 0..BLOCK_SIZE {
                     for chan in 0..channels {
+                        rms[chan] += block[chan][i].powf(2.0);
                         let value: T = T::from_sample(block[chan][i]);
                         data[(i*channels+chan)+(current_block)*block_step] = value;
                     }
                 }
             }
+            rms = rms.into_iter().map(|x| (x/512.0).sqrt() ).collect();
+            // left rms[0] right rms[1]
+
+            let ptr = ringbuf_l.load(Ordering::SeqCst);
+            // let len = RB_SIZE;
+            let idx = index.load(Ordering::SeqCst);
+            unsafe {
+                ptr.add(idx).write(rms[0]);
+            };
+            index.store( (idx + 1) % RB_SIZE, Ordering::SeqCst); // from 0, 1, 2, RB_SIZE-1;
         },
         err_fn,
         None,
@@ -200,7 +189,7 @@ where
     stream.play()?;
 
     loop {
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(8));
         let modified_time = metadata(&path)?.modified()?;
         if modified_time != last_modified_time {
             last_modified_time = modified_time;
@@ -211,18 +200,62 @@ where
                 code.push_str(&line?);
                 code.push_str("\n");
             }
-            let current_time = SystemTime::now();
-            let unix_time = current_time.duration_since(UNIX_EPOCH)
-                .expect("Time went backwards");
-            let system_time = UNIX_EPOCH + unix_time;
-            let datetime = DateTime::<Utc>::from(system_time);
-            println!("```");
-            println!("\n// utc time: {} \n", datetime.format("%Y-%m-%d %H:%M:%S").to_string());
-            println!("{}", code);
-            println!("```");
+            // let current_time = SystemTime::now();
+            // let unix_time = current_time.duration_since(UNIX_EPOCH).expect("Time went backwards");
+            // let system_time = UNIX_EPOCH + unix_time;
+            // let datetime = DateTime::<Utc>::from(system_time);
+            // println!("```");
+            // println!("\n// utc time: {} \n", datetime.format("%Y-%m-%d %H:%M:%S").to_string());
+            // println!("{}", code);
+            // println!("```");
             code_ptr.store(unsafe {code.as_bytes_mut().as_mut_ptr() }, Ordering::SeqCst);
             code_len.store(code.len(), Ordering::SeqCst);
             has_update.store(true, Ordering::SeqCst);
         }
     }
+}
+
+fn ui<B: Backend>(
+    f: &mut Frame<B>, 
+    left: &Arc<AtomicPtr<f32>>, 
+    index: &Arc<AtomicUsize>
+) {
+    let chunks = Layout::default()
+    .direction(Direction::Vertical)
+    .margin(2)
+    .constraints(
+        [
+            Constraint::Percentage(100),
+        ]
+        .as_ref(),
+    )
+    .split(f.size());
+
+    let mut data: [f32; RB_SIZE] = [0.0; RB_SIZE];
+    let ptr = left.load(Ordering::SeqCst);
+    let mut idx = index.load(Ordering::SeqCst); // let's say 20, while RB_size is 50
+    for i in 0..RB_SIZE {
+        let value = unsafe { ptr.add(idx).read() };
+        data[RB_SIZE-1-i] = value;
+        if idx == 0 {
+            idx = RB_SIZE - 1;// read from the tail
+        } else {
+            idx -= 1;
+        }
+    }
+
+    // I keep this line; it's a bug; we need to convert the range
+    // let leftvec = data.iter().map(|&x| x as u64).collect::<Vec<u64>>();
+
+    let leftvec = data.iter().map(|&x| (x * 100.0) as u64).collect::<Vec<u64>>();
+
+    let sparkline = Sparkline::default()
+        .block(
+            Block::default()
+                .title("Left")
+                .borders(Borders::LEFT | Borders::RIGHT),
+        )
+        .data(&leftvec)
+        .style(Style::default().fg(Color::Blue));
+    f.render_widget(sparkline, chunks[0]);
 }
