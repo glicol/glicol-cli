@@ -18,7 +18,7 @@ Then, in your Terminal:
 cargo install --git https://github.com/glicol/glicol-cli.git
 ```
 
-Create a new file called `1.glicol`, then run this command in your Terminal:
+Create a new file called `test.glicol`, then run this command in your Terminal:
 ```sh
 glicol-cli test.glicol
 ```
