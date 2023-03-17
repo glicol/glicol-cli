@@ -124,12 +124,40 @@ fn main() -> Result<(), Box<dyn Error>> {
         let config = device.default_output_config().unwrap();
         // println!("Default output config: {:?}", config);
 
+
         match config.sample_format() {
-            // ... other sample formats ...
+            cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            // cpal::SampleFormat::I24 => run::<I24>(&device, &config.into()),
+            cpal::SampleFormat::I32 => run_audio::<i32>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            // cpal::SampleFormat::I48 => run::<I48>(&device, &config.into()),
+            cpal::SampleFormat::I64 => run_audio::<i64>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            cpal::SampleFormat::U8 => run_audio::<u8>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            cpal::SampleFormat::U16 => run_audio::<u16>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            // cpal::SampleFormat::U24 => run::<U24>(&device, &config.into()),
+            cpal::SampleFormat::U32 => run_audio::<u32>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            // cpal::SampleFormat::U48 => run::<U48>(&device, &config.into()),
+            cpal::SampleFormat::U64 => run_audio::<u64>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
             cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), 
                 ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
-            _ => unimplemented!(),
+            cpal::SampleFormat::F64 => run_audio::<f64>(&device, &config.into(), 
+                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            sample_format => panic!("Unsupported sample format '{sample_format}'"),
         }
+
+        // match config.sample_format() {
+        //     cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), 
+        //         ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+        //     _ => unimplemented!(),
+        // }
     });
 
     let tick_rate = Duration::from_millis(10);
