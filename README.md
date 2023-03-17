@@ -42,3 +42,6 @@ out: mix ~t.. >> plate 0.1
 - [x] Remove unnecessary print
 - [ ] Support sample adding!
 - [ ] Linux/Windows test; PR welcomed!
+- [ ] [Design proper tui](https://github.com/glicol/glicol-cli/issues/1)?
+
+https://user-images.githubusercontent.com/35621141/225905964-ea8bff64-5773-48a6-8d8c-e8d30bbc0c3d.mp4
