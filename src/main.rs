@@ -4,7 +4,7 @@ use std::time::{Instant, Duration}; // , SystemTime, UNIX_EPOCH
 use std::error::Error;
 use std::{io, thread}; // use std::time::{Instant};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicUsize, AtomicU32, AtomicBool, AtomicPtr, Ordering};
 
 use anyhow::Result;
 use clap::Parser;
@@ -21,7 +21,7 @@ use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
     style::{Color, Style, Modifier},
-    widgets::{Block, Borders, Sparkline},
+    widgets::{Block, Borders, Sparkline, Gauge},
     text::Span,
     symbols,
     widgets::{Axis, Chart, Dataset, GraphType},
@@ -39,9 +39,9 @@ struct Args {
     #[arg(index=1)]
     file: String,
 
-    /// Show a scope or not
-    #[arg(short, long)]
-    scope: bool,
+    // Show a scope or not
+    // #[arg(short, long)]
+    // scope: bool,
 
     /// Set beats per minute (BPM)
     #[arg(short, long, default_value_t = 120.0)]
@@ -70,7 +70,7 @@ struct Args {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let path = args.file;
-    let scope = args.scope;
+    // let scope = args.scope;
     let device = args.device;
     let bpm = args.bpm;
 
@@ -98,6 +98,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let samples_r_ptr = Arc::new(AtomicPtr::<f32>::new( samples_r.as_mut_ptr()));
     let samples_l_ptr_clone = Arc::clone(&samples_l_ptr);
     let samples_r_ptr_clone = Arc::clone(&samples_r_ptr);
+
+    // let is_stopping = Arc::new(AtomicBool::new(false));
+    // let is_stopping_clone = Arc::clone(&is_stopping);
+
+    let capacity = Arc::new(AtomicU32::new(0));
+    let capacity_clone = Arc::clone(&capacity);
 
     // Conditionally compile with jack if the feature is specified.
     #[cfg(all(
@@ -147,7 +153,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let audio_thread = thread::spawn(move || {
         
         let options = (ptr_rb_left_clone, ptr_rb_right_clone, index_clone, 
-            samples_l_ptr_clone, samples_r_ptr_clone, samples_index_clone, path, bpm);
+            samples_l_ptr_clone, samples_r_ptr_clone, samples_index_clone, path, bpm, capacity_clone);
         match config.sample_format() {
             cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), options),
             cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), options),
@@ -167,7 +173,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let tick_rate = Duration::from_millis(10);
+    let tick_rate = Duration::from_millis(16);
     let res = run_app(
         &mut terminal,
         tick_rate, 
@@ -177,8 +183,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         samples_l_ptr,
         samples_r_ptr,
         samples_index,
-        scope,
-        info
+        // scope,
+        info,
+        capacity
     );
 
     // restore terminal
@@ -208,15 +215,16 @@ fn run_app<B: Backend>(
     samples_l_ptr: Arc<AtomicPtr<f32>>, 
     samples_r_ptr: Arc<AtomicPtr<f32>>,
     sampels_index: Arc<AtomicUsize>,
-    use_scope: bool,
-    info: String
+    // use_scope: bool,
+    info: String,
+    capacity: Arc<AtomicU32>,
     // right: Arc<AtomicPtr<f32>>
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
 
     loop {
-        if use_scope {
-            terminal.draw(|f| ui2(f, &samples_l_ptr, &samples_r_ptr, &sampels_index, &info))?;
+        if true {
+            terminal.draw(|f| ui2(f, &samples_l_ptr, &samples_r_ptr, &sampels_index, &info, &capacity))?;
         } else {
             terminal.draw(|f| ui(f, &left, &right, &index))?;
         }
@@ -244,9 +252,17 @@ fn run_app<B: Backend>(
 pub fn run_audio<T>(
     device: &cpal::Device, 
     config: &cpal::StreamConfig,
-    options: (Arc<AtomicPtr<f32>>, Arc<AtomicPtr<f32>>, Arc<AtomicUsize>,
-        Arc<AtomicPtr<f32>>, Arc<AtomicPtr<f32>>, Arc<AtomicUsize>,
-        String, f32,),
+    options: (
+        Arc<AtomicPtr<f32>>,
+        Arc<AtomicPtr<f32>>,
+        Arc<AtomicUsize>,
+        Arc<AtomicPtr<f32>>,
+        Arc<AtomicPtr<f32>>,
+        Arc<AtomicUsize>,
+        String,
+        f32,
+        Arc<AtomicU32>
+    ),
 
 ) -> Result<(), anyhow::Error>
 where
@@ -261,6 +277,7 @@ where
     let samples_index_clone = options.5;
     let path = options.6;
     let bpm = options.7;
+    let capacity = options.8;
     
     let mut last_modified_time = metadata(&path)?.modified()?;
 
@@ -306,7 +323,10 @@ where
             let samples_left_ptr = samples_l_ptr_clone.load(Ordering::SeqCst);
             let samples_right_ptr = samples_r_ptr_clone.load(Ordering::SeqCst);
             
+            let start_time = Instant::now();
+
             for current_block in 0..blocks_needed {
+
                 let (block, _err_msg) = engine.next_block(vec![]);
                 for i in 0..BLOCK_SIZE {
                     for chan in 0..channels {
@@ -326,6 +346,12 @@ where
                     }
                 }
             }
+
+            let elapsed_time = start_time.elapsed().as_nanos() as f32;
+            let allowed_ns = block_step as f32 * 1_000_000_000.0 / sr as f32;
+            let perc = elapsed_time / allowed_ns;
+            capacity.store( perc.to_bits(), Ordering::Release);
+
             rms = rms.into_iter().map(|x| (x / block_step as f32).sqrt() ).collect();
             // left rms[0] right rms[1]
 
@@ -403,19 +429,8 @@ fn ui<B: Backend>(
         }
     }
 
-    // I keep this line; it's a bug; we need to convert the range
-    // let leftvec = data.iter().map(|&x| x as u64).collect::<Vec<u64>>();
-
     let leftvec = data.iter().map(|&x| (x * 100.0) as u64).collect::<Vec<u64>>();
     let rightvec = data2.iter().map(|&x| (x * 100.0) as u64).collect::<Vec<u64>>();
-
-    // let barchart = BarChart::default()
-    // .block(Block::default().title("Data1").borders(Borders::ALL))
-    // .data(&leftvec)
-    // .bar_width(9)
-    // .bar_style(Style::default().fg(Color::Yellow));
-    // .value_style(Style::default().fg(Color::Black).bg(Color::Yellow));
-    // f.render_widget(barchart, chunks[0]);
 
     let sparkline = Sparkline::default()
         .block(
@@ -442,16 +457,17 @@ fn ui2<B: Backend>(
     samples_l: &Arc<AtomicPtr<f32>>, // block step length
     samples_r: &Arc<AtomicPtr<f32>>,
     frame_index: &Arc<AtomicUsize>,
-    info: &str
+    info: &str,
+    capacity: &Arc<AtomicU32>
     // use_scope: bool
 ) {
 
     let mut data = [0.0; RB_SIZE];
     let mut data2 = [0.0; RB_SIZE];
-    let ptr = samples_l.load(Ordering::SeqCst);
-    let ptr2 = samples_r.load(Ordering::SeqCst);
+    let ptr = samples_l.load(Ordering::Acquire);
+    let ptr2 = samples_r.load(Ordering::Acquire);
 
-    let mut idx = frame_index.load(Ordering::SeqCst);
+    let mut idx = frame_index.load(Ordering::Acquire);
 
     for i in 0..RB_SIZE {
         data[RB_SIZE-1-i] = unsafe { ptr.add(idx).read() };
@@ -469,8 +485,32 @@ fn ui2<B: Backend>(
     let size = f.size();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(100)].as_ref())
+        .constraints([
+            Constraint::Percentage(10),
+            Constraint::Percentage(90)
+        ].as_ref())
         .split(size);
+
+
+    let cap = capacity.load(Ordering::Acquire);
+    let portion = f32::from_bits(cap).clamp(0.0, 1.0);
+    // print!(" cap {:?}, portion {:?}", cap, portion);
+
+    let label = Span::styled(
+        format!("{:.2}%", portion * 100.0),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::ITALIC | Modifier::BOLD),
+    );
+
+    let gauge = Gauge::default()
+    .block(Block::default().title("Render Capacity").borders(Borders::ALL))
+    .gauge_style(Style::default().fg(Color::Green))
+    .ratio(portion as f64)
+    .label(label)
+    .use_unicode(true);
+    f.render_widget(gauge, chunks[0]);
+
     let x_labels = vec![
         Span::styled(
             format!("[0, 200]"),
@@ -488,7 +528,7 @@ fn ui2<B: Backend>(
             .name("right")
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(Color::Red))
             .data(&right),
     ];
 
@@ -521,5 +561,5 @@ fn ui2<B: Backend>(
                 ])
                 .bounds([-1., 1.]),
         );
-    f.render_widget(chart, chunks[0]);
+    f.render_widget(chart, chunks[1]);
 }
