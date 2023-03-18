@@ -1,6 +1,6 @@
 # glicol-cli
 
-https://user-images.githubusercontent.com/35621141/225968990-2d1fea27-8560-4f41-ae0e-8e6edea15000.mp4
+https://user-images.githubusercontent.com/35621141/226138600-199aed46-4f16-4ae2-9951-716181782f59.mp4
 
 ## What's this?
 
