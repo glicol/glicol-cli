@@ -43,7 +43,6 @@ Arguments:
   <FILE>  path to the .glicol file
 
 Options:
-  -s, --scope            Show a scope or not
   -b, --bpm <BPM>        Set beats per minute (BPM) [default: 120]
   -d, --device <DEVICE>  The audio device to use [default: default]
   -h, --help             Print help
