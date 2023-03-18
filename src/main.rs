@@ -39,9 +39,9 @@ struct Args {
     #[arg(index=1)]
     file: String,
 
-    /// Show a scope or not
-    #[arg(short, long)]
-    scope: bool,
+    // Show a scope or not
+    // #[arg(short, long)]
+    // scope: bool,
 
     /// Set beats per minute (BPM)
     #[arg(short, long, default_value_t = 120.0)]
@@ -70,7 +70,7 @@ struct Args {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let path = args.file;
-    let scope = args.scope;
+    // let scope = args.scope;
     let device = args.device;
     let bpm = args.bpm;
 
@@ -98,6 +98,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let samples_r_ptr = Arc::new(AtomicPtr::<f32>::new( samples_r.as_mut_ptr()));
     let samples_l_ptr_clone = Arc::clone(&samples_l_ptr);
     let samples_r_ptr_clone = Arc::clone(&samples_r_ptr);
+
+    // let is_stopping = Arc::new(AtomicBool::new(false));
+    // let is_stopping_clone = Arc::clone(&is_stopping);
 
     let capacity = Arc::new(AtomicU32::new(0));
     let capacity_clone = Arc::clone(&capacity);
@@ -180,7 +183,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         samples_l_ptr,
         samples_r_ptr,
         samples_index,
-        scope,
+        // scope,
         info,
         capacity
     );
@@ -212,7 +215,7 @@ fn run_app<B: Backend>(
     samples_l_ptr: Arc<AtomicPtr<f32>>, 
     samples_r_ptr: Arc<AtomicPtr<f32>>,
     sampels_index: Arc<AtomicUsize>,
-    use_scope: bool,
+    // use_scope: bool,
     info: String,
     capacity: Arc<AtomicU32>,
     // right: Arc<AtomicPtr<f32>>
@@ -220,7 +223,7 @@ fn run_app<B: Backend>(
     let mut last_tick = Instant::now();
 
     loop {
-        if use_scope {
+        if true {
             terminal.draw(|f| ui2(f, &samples_l_ptr, &samples_r_ptr, &sampels_index, &info, &capacity))?;
         } else {
             terminal.draw(|f| ui(f, &left, &right, &index))?;
@@ -320,9 +323,7 @@ where
             let samples_left_ptr = samples_l_ptr_clone.load(Ordering::SeqCst);
             let samples_right_ptr = samples_r_ptr_clone.load(Ordering::SeqCst);
             
-            // let start_time = Instant::now();
-
-            let mut t: u32 = 0;
+            let start_time = Instant::now();
 
             for current_block in 0..blocks_needed {
 
@@ -343,15 +344,13 @@ where
                         let value: T = T::from_sample(block[chan][i]);
                         data[(i*channels+chan)+(current_block)*block_step] = value;
                     }
-                    t += 1;
-                    capacity.store( (t as f32 / block_step as f32 / 1000.0).to_bits(), Ordering::SeqCst);
                 }
             }
 
-            // let elapsed_time = start_time.elapsed().as_millis() as f32;
-            // let allowed_ms = block_step as f32 * 1000.0 / sr as f32;
-            // let perc = elapsed_time / allowed_ms;
-            // capacity.store( perc.to_bits(), Ordering::SeqCst);
+            let elapsed_time = start_time.elapsed().as_nanos() as f32;
+            let allowed_ns = block_step as f32 * 1_000_000_000.0 / sr as f32;
+            let perc = elapsed_time / allowed_ns;
+            capacity.store( perc.to_bits(), Ordering::Release);
 
             rms = rms.into_iter().map(|x| (x / block_step as f32).sqrt() ).collect();
             // left rms[0] right rms[1]
@@ -430,19 +429,8 @@ fn ui<B: Backend>(
         }
     }
 
-    // I keep this line; it's a bug; we need to convert the range
-    // let leftvec = data.iter().map(|&x| x as u64).collect::<Vec<u64>>();
-
     let leftvec = data.iter().map(|&x| (x * 100.0) as u64).collect::<Vec<u64>>();
     let rightvec = data2.iter().map(|&x| (x * 100.0) as u64).collect::<Vec<u64>>();
-
-    // let barchart = BarChart::default()
-    // .block(Block::default().title("Data1").borders(Borders::ALL))
-    // .data(&leftvec)
-    // .bar_width(9)
-    // .bar_style(Style::default().fg(Color::Yellow));
-    // .value_style(Style::default().fg(Color::Black).bg(Color::Yellow));
-    // f.render_widget(barchart, chunks[0]);
 
     let sparkline = Sparkline::default()
         .block(
@@ -503,18 +491,21 @@ fn ui2<B: Backend>(
         ].as_ref())
         .split(size);
 
-    let mut portion = f32::from_bits(capacity.load(Ordering::SeqCst)).clamp(0.0, 1.0);
+
+    let cap = capacity.load(Ordering::Acquire);
+    let portion = f32::from_bits(cap).clamp(0.0, 1.0);
+    // print!(" cap {:?}, portion {:?}", cap, portion);
 
     let label = Span::styled(
         format!("{:.2}%", portion * 100.0),
         Style::default()
-            .fg(Color::Red)
+            .fg(Color::White)
             .add_modifier(Modifier::ITALIC | Modifier::BOLD),
     );
 
     let gauge = Gauge::default()
     .block(Block::default().title("Render Capacity").borders(Borders::ALL))
-    .gauge_style(Style::default().fg(Color::Yellow))
+    .gauge_style(Style::default().fg(Color::Green))
     .ratio(portion as f64)
     .label(label)
     .use_unicode(true);
@@ -537,7 +528,7 @@ fn ui2<B: Backend>(
             .name("right")
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(Color::Red))
             .data(&right),
     ];
 
