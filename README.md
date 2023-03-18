@@ -10,20 +10,49 @@ It watches a file changes and then update the music in real-time.
 
 ## How to use it?
 
-First, you need to have `cargo` installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)).
+### Step 1
 
-Then, in your Terminal:
+You need to have `cargo` installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)).
+
+### Step 2
+
+In your Terminal:
 
 ```sh
 cargo install --git https://github.com/glicol/glicol-cli.git
 ```
 
+### Step 3
+
 Create a new file called `test.glicol`, then run this command in your Terminal:
+
 ```sh
 glicol-cli test.glicol
 ```
 
-Edit `test.glicol` with your favourite editor:
+For more `OPTIONS`, call `--help` in your terminal:
+
+```
+~ glicol-cli --help                                    
+
+Glicol cli tool. This tool will watch the changes in a .glicol file
+
+Usage: glicol-cli [OPTIONS] <FILE>
+
+Arguments:
+  <FILE>  path to the .glicol file
+
+Options:
+  -s, --scope            Show a scope or not
+  -b, --bpm <BPM>        Set beats per minute (BPM) [default: 120]
+  -d, --device <DEVICE>  The audio device to use [default: default]
+  -h, --help             Print help
+  -V, --version          Print version
+```
+
+### Step 4
+
+Start live coding. Edit `test.glicol` with your favourite editor:
 
 ```
 // test.glicol
