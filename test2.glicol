@@ -1,0 +1,18 @@
+~osc1: saw ~pitch
+~osc2: squ ~pitch
+
+~env: ~seq >> envperc 0.001 0.1 >> mul 1.0
+
+~seq: speed 2.0 >> seq 60 _60 _60 60
+>> mul 0.30
+
+~pitch: ~seq >> mul 261.3
+
+~t1: mix ~osc.. >> lpf 300.0 0.33 >> mul ~env
+>> mul 1.5
+
+o: mix ~t.. >> mul 1 >> plate 0.2
+
+~t2: speed 4.0 >> seq _ 60 >> bd 0.2 >> mul 0.9
+
+~t3: speed 4.0 >> seq 60 61 63 62 >> hh 0.02 >> mul 0.05

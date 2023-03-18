@@ -20,8 +20,11 @@ use crossterm::{
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    style::{Color, Style, Modifier},
     widgets::{Block, Borders, Sparkline},
+    text::Span,
+    symbols,
+    widgets::{Axis, Chart, Dataset, GraphType},
     Frame, Terminal,
 };
 
@@ -35,6 +38,14 @@ struct Args {
     /// path to the .glicol file
     #[arg(index=1)]
     file: String,
+
+    /// Show a scope or not
+    #[arg(short, long)]
+    scope: bool,
+
+    /// Set beats per minute (BPM)
+    #[arg(short, long, default_value_t = 120.0)]
+    bpm: f32,
 
     /// The audio device to use
     #[arg(short, long, default_value_t = String::from("default"))]
@@ -57,6 +68,12 @@ struct Args {
 
 #[allow(unused_must_use)]
 fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+    let path = args.file;
+    let scope = args.scope;
+    let device = args.device;
+    let bpm = args.bpm;
+
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -66,102 +83,103 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut ringbuf_l = [0.0; RB_SIZE];
     let mut ringbuf_r = [0.0; RB_SIZE];
+    let mut samples_l = [0.0; RB_SIZE];
+    let mut samples_r = [0.0; RB_SIZE];
+    let samples_index = Arc::new(AtomicUsize::new(0));
+    let samples_index_clone = Arc::clone(&samples_index);
     let index = Arc::new(AtomicUsize::new(0));
-    // let mut index_r = Arc::new(AtomicUsize::new(0));
     let index_clone = Arc::clone(&index);
-    // let _index_r = Arc::clone(&index_r);
     let ptr_rb_left = Arc::new(AtomicPtr::<f32>::new( ringbuf_l.as_mut_ptr()));
     let ptr_rb_right = Arc::new(AtomicPtr::<f32>::new( ringbuf_r.as_mut_ptr()));
     let ptr_rb_left_clone = Arc::clone(&ptr_rb_left);
     let ptr_rb_right_clone = Arc::clone(&ptr_rb_right);
 
+    let samples_l_ptr = Arc::new(AtomicPtr::<f32>::new( samples_l.as_mut_ptr()));
+    let samples_r_ptr = Arc::new(AtomicPtr::<f32>::new( samples_r.as_mut_ptr()));
+    let samples_l_ptr_clone = Arc::clone(&samples_l_ptr);
+    let samples_r_ptr_clone = Arc::clone(&samples_r_ptr);
+
+    // Conditionally compile with jack if the feature is specified.
+    #[cfg(all(
+        any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd"
+        ),
+        feature = "jack"
+    ))]
+    let host = if args.jack {
+        cpal::host_from_id(cpal::available_hosts()
+            .into_iter()
+            .find(|id| *id == cpal::HostId::Jack)
+            .expect(
+                "make sure --features jack is specified. only works on OSes where jack is available",
+            )).expect("jack host unavailable")
+    } else {
+        cpal::default_host()
+    };
+
+    #[cfg(any(
+        not(any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd"
+        )),
+        not(feature = "jack")
+    ))]
+    let host = cpal::default_host();
+
+    let device = if device == "default" {
+        host.default_output_device()
+    } else {
+        host.output_devices()?
+            .find(|x| x.name().map(|y| y == device).unwrap_or(false))
+    }
+    .expect("failed to find output device");
+    // println!("Output device: {}", device.name()?);
+    let config = device.default_output_config().unwrap();
+    // println!("Default output config: {:?}", config);
+
+    let info: String = format!("{:?} {:?}", device.name()?.clone(), config.clone());
+
     let audio_thread = thread::spawn(move || {
-
-        let args = Args::parse();
-        let path = args.file;
-        let device = args.device;
-        // Conditionally compile with jack if the feature is specified.
-        #[cfg(all(
-            any(
-                target_os = "linux",
-                target_os = "dragonfly",
-                target_os = "freebsd",
-                target_os = "netbsd"
-            ),
-            feature = "jack"
-        ))]
-        let host = if args.jack {
-            cpal::host_from_id(cpal::available_hosts()
-                .into_iter()
-                .find(|id| *id == cpal::HostId::Jack)
-                .expect(
-                    "make sure --features jack is specified. only works on OSes where jack is available",
-                )).expect("jack host unavailable")
-        } else {
-            cpal::default_host()
-        };
-
-        #[cfg(any(
-            not(any(
-                target_os = "linux",
-                target_os = "dragonfly",
-                target_os = "freebsd",
-                target_os = "netbsd"
-            )),
-            not(feature = "jack")
-        ))]
-        let host = cpal::default_host();
-
-        let device = if device == "default" {
-            host.default_output_device()
-        } else {
-            host.output_devices()?
-                .find(|x| x.name().map(|y| y == device).unwrap_or(false))
-        }
-        .expect("failed to find output device");
-        // println!("Output device: {}", device.name()?);
-
-        let config = device.default_output_config().unwrap();
-        // println!("Default output config: {:?}", config);
-
-
+        
+        let options = (ptr_rb_left_clone, ptr_rb_right_clone, index_clone, 
+            samples_l_ptr_clone, samples_r_ptr_clone, samples_index_clone, path, bpm);
         match config.sample_format() {
-            cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
-            cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), options),
+            cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), options),
             // cpal::SampleFormat::I24 => run::<I24>(&device, &config.into()),
-            cpal::SampleFormat::I32 => run_audio::<i32>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            cpal::SampleFormat::I32 => run_audio::<i32>(&device, &config.into(), options),
             // cpal::SampleFormat::I48 => run::<I48>(&device, &config.into()),
-            cpal::SampleFormat::I64 => run_audio::<i64>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
-            cpal::SampleFormat::U8 => run_audio::<u8>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
-            cpal::SampleFormat::U16 => run_audio::<u16>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            cpal::SampleFormat::I64 => run_audio::<i64>(&device, &config.into(), options),
+            cpal::SampleFormat::U8 => run_audio::<u8>(&device, &config.into(), options),
+            cpal::SampleFormat::U16 => run_audio::<u16>(&device, &config.into(), options),
             // cpal::SampleFormat::U24 => run::<U24>(&device, &config.into()),
-            cpal::SampleFormat::U32 => run_audio::<u32>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            cpal::SampleFormat::U32 => run_audio::<u32>(&device, &config.into(), options),
             // cpal::SampleFormat::U48 => run::<U48>(&device, &config.into()),
-            cpal::SampleFormat::U64 => run_audio::<u64>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
-            cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
-            cpal::SampleFormat::F64 => run_audio::<f64>(&device, &config.into(), 
-                ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
+            cpal::SampleFormat::U64 => run_audio::<u64>(&device, &config.into(), options),
+            cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), options),
+            cpal::SampleFormat::F64 => run_audio::<f64>(&device, &config.into(), options),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
         }
-
-        // match config.sample_format() {
-        //     cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), 
-        //         ptr_rb_left_clone, ptr_rb_right_clone, index_clone, path),
-        //     _ => unimplemented!(),
-        // }
     });
 
     let tick_rate = Duration::from_millis(10);
-    let res = run_app(&mut terminal, tick_rate, ptr_rb_left, ptr_rb_right, index);
+    let res = run_app(
+        &mut terminal,
+        tick_rate, 
+        ptr_rb_left,
+        ptr_rb_right,
+        index,
+        samples_l_ptr,
+        samples_r_ptr,
+        samples_index,
+        scope,
+        info
+    );
 
     // restore terminal
     disable_raw_mode()?;
@@ -187,13 +205,22 @@ fn run_app<B: Backend>(
     left: Arc<AtomicPtr<f32>>, 
     right: Arc<AtomicPtr<f32>>,
     index: Arc<AtomicUsize>,
+    samples_l_ptr: Arc<AtomicPtr<f32>>, 
+    samples_r_ptr: Arc<AtomicPtr<f32>>,
+    sampels_index: Arc<AtomicUsize>,
+    use_scope: bool,
+    info: String
     // right: Arc<AtomicPtr<f32>>
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
 
     loop {
-        terminal.draw(|f| ui(f, &left, &right, &index))?;
-
+        if use_scope {
+            terminal.draw(|f| ui2(f, &samples_l_ptr, &samples_r_ptr, &sampels_index, &info))?;
+        } else {
+            terminal.draw(|f| ui(f, &left, &right, &index))?;
+        }
+        
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
@@ -216,18 +243,25 @@ fn run_app<B: Backend>(
 // , play_audio: Arc<AtomicBool>
 pub fn run_audio<T>(
     device: &cpal::Device, 
-    config: &cpal::StreamConfig, 
-    ringbuf_l: Arc<AtomicPtr<f32>>, 
-    ringbuf_r: Arc<AtomicPtr<f32>>,
-    index: Arc<AtomicUsize>,
-    path: String
-    // index_r: Arc<AtomicUsize>,
+    config: &cpal::StreamConfig,
+    options: (Arc<AtomicPtr<f32>>, Arc<AtomicPtr<f32>>, Arc<AtomicUsize>,
+        Arc<AtomicPtr<f32>>, Arc<AtomicPtr<f32>>, Arc<AtomicUsize>,
+        String, f32,),
+
 ) -> Result<(), anyhow::Error>
 where
     T: SizedSample + FromSample<f32>,
 {
 
-    // let path = "1.glicol".to_owned();
+    let ptr_rb_left_clone = options.0;
+    let ptr_rb_right_clone = options.1;
+    let index_clone = options.2;
+    let samples_l_ptr_clone = options.3;
+    let samples_r_ptr_clone = options.4;
+    let samples_index_clone = options.5;
+    let path = options.6;
+    let bpm = options.7;
+    
     let mut last_modified_time = metadata(&path)?.modified()?;
 
     let sr = config.sample_rate.0 as usize;
@@ -245,6 +279,7 @@ where
     let _has_update = Arc::clone(&has_update);
     
     engine.set_sr(sr);
+    engine.set_bpm(bpm);
 
     let channels = 2 as usize; //config.channels as usize;
 
@@ -267,10 +302,24 @@ where
             let blocks_needed = block_step / BLOCK_SIZE;
             let block_step = channels * BLOCK_SIZE;
             let mut rms: Vec<f32> = vec![0.0; channels];
+
+            let samples_left_ptr = samples_l_ptr_clone.load(Ordering::SeqCst);
+            let samples_right_ptr = samples_r_ptr_clone.load(Ordering::SeqCst);
+            
             for current_block in 0..blocks_needed {
                 let (block, _err_msg) = engine.next_block(vec![]);
                 for i in 0..BLOCK_SIZE {
                     for chan in 0..channels {
+                        let samples_i = samples_index_clone.load(Ordering::SeqCst);
+                        unsafe {
+                            match chan {
+                                0 => samples_left_ptr.add(samples_i).write(block[chan][i]),
+                                1 => samples_right_ptr.add(samples_i).write(block[chan][i]),
+                                _ => panic!()
+                            };
+                        };
+                        samples_index_clone.store( (samples_i + 1) % 200, Ordering::SeqCst);
+
                         rms[chan] += block[chan][i].powf(2.0);
                         let value: T = T::from_sample(block[chan][i]);
                         data[(i*channels+chan)+(current_block)*block_step] = value;
@@ -280,16 +329,16 @@ where
             rms = rms.into_iter().map(|x| (x / block_step as f32).sqrt() ).collect();
             // left rms[0] right rms[1]
 
-            let ptr_l = ringbuf_l.load(Ordering::SeqCst);
-            let ptr_r = ringbuf_r.load(Ordering::SeqCst);
+            let ptr_l = ptr_rb_left_clone.load(Ordering::SeqCst);
+            let ptr_r = ptr_rb_right_clone.load(Ordering::SeqCst);
             
             // let len = RB_SIZE;
-            let idx = index.load(Ordering::SeqCst);
+            let idx = index_clone.load(Ordering::SeqCst);
             unsafe {
                 ptr_l.add(idx).write(rms[0]);
                 ptr_r.add(idx).write(rms[1]);
             };
-            index.store( (idx + 1) % RB_SIZE, Ordering::SeqCst); // from 0, 1, 2, RB_SIZE-1;
+            index_clone.store( (idx + 1) % RB_SIZE, Ordering::SeqCst); // from 0, 1, 2, RB_SIZE-1;
         },
         err_fn,
         None,
@@ -328,7 +377,8 @@ fn ui<B: Backend>(
     f: &mut Frame<B>, 
     left: &Arc<AtomicPtr<f32>>, 
     right: &Arc<AtomicPtr<f32>>, 
-    index: &Arc<AtomicUsize>
+    index: &Arc<AtomicUsize>,
+    // use_scope: bool
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -359,7 +409,6 @@ fn ui<B: Backend>(
     let leftvec = data.iter().map(|&x| (x * 100.0) as u64).collect::<Vec<u64>>();
     let rightvec = data2.iter().map(|&x| (x * 100.0) as u64).collect::<Vec<u64>>();
 
-
     // let barchart = BarChart::default()
     // .block(Block::default().title("Data1").borders(Borders::ALL))
     // .data(&leftvec)
@@ -367,7 +416,6 @@ fn ui<B: Backend>(
     // .bar_style(Style::default().fg(Color::Yellow));
     // .value_style(Style::default().fg(Color::Black).bg(Color::Yellow));
     // f.render_widget(barchart, chunks[0]);
-
 
     let sparkline = Sparkline::default()
         .block(
@@ -386,4 +434,92 @@ fn ui<B: Backend>(
         .data(&rightvec)
         .style(Style::default().fg(Color::Red));
     f.render_widget(sparkline, chunks[1]);
+}
+
+
+fn ui2<B: Backend>(
+    f: &mut Frame<B>, 
+    samples_l: &Arc<AtomicPtr<f32>>, // block step length
+    samples_r: &Arc<AtomicPtr<f32>>,
+    frame_index: &Arc<AtomicUsize>,
+    info: &str
+    // use_scope: bool
+) {
+
+    let mut data = [0.0; RB_SIZE];
+    let mut data2 = [0.0; RB_SIZE];
+    let ptr = samples_l.load(Ordering::SeqCst);
+    let ptr2 = samples_r.load(Ordering::SeqCst);
+
+    let mut idx = frame_index.load(Ordering::SeqCst);
+
+    for i in 0..RB_SIZE {
+        data[RB_SIZE-1-i] = unsafe { ptr.add(idx).read() };
+        data2[RB_SIZE-1-i] = unsafe { ptr2.add(idx).read() };
+        if idx == 0 {
+            idx = RB_SIZE - 1;// read from the tail
+        } else {
+            idx -= 1;
+        }
+    }
+
+    let left: Vec<(f64, f64)> = data.into_iter().enumerate().map(|(x, y)| (x as f64, y as f64)).collect();
+    let right: Vec<(f64, f64)> = data2.into_iter().enumerate().map(|(x, y)| (x as f64, y as f64)).collect();
+
+    let size = f.size();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(size);
+    let x_labels = vec![
+        Span::styled(
+            format!("[0, 200]"),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+    ];
+    let datasets = vec![
+        Dataset::default()
+            .name("left")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Blue))
+            .data(&left),
+        Dataset::default()
+            .name("right")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(Color::Yellow))
+            .data(&right),
+    ];
+
+    let chart = Chart::new(datasets)
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    info.replace("SupportedStreamConfig", ""),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::NONE),
+        )
+        .x_axis(
+            Axis::default()
+                .title("X Axis")
+                .style(Style::default().fg(Color::Gray))
+                .labels(x_labels)
+                .bounds([0., 200.]),
+        )
+        .y_axis(
+            Axis::default()
+                .title("Y Axis")
+                .style(Style::default().fg(Color::Gray))
+                .labels(vec![
+                    Span::styled("-1", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw("0"),
+                    Span::styled("1", Style::default().add_modifier(Modifier::BOLD)),
+                ])
+                .bounds([-1., 1.]),
+        );
+    f.render_widget(chart, chunks[0]);
 }
