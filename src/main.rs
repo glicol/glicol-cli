@@ -27,7 +27,9 @@ use tui::{
     widgets::{Axis, Chart, Dataset, GraphType},
     Frame, Terminal,
 };
-
+use hashbrown::HashMap;
+mod findwav; use findwav::find_wav_files;
+// main.rs
 const RB_SIZE: usize = 200;
 const BLOCK_SIZE: usize = 128;
 
@@ -38,6 +40,9 @@ struct Args {
     /// path to the .glicol file
     #[arg(index=1)]
     file: String,
+
+    #[arg(short, long, default_value_t = String::from(""))]
+    samplefolder: String,
 
     // Show a scope or not
     // #[arg(short, long)]
@@ -73,8 +78,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let scope = args.scope;
     let device = args.device;
     let bpm = args.bpm;
+    let samplefolder = args.samplefolder;
 
+    let mut samples_dict: HashMap<String, (&'static [f32], usize, usize)> = HashMap::new();
     // setup terminal
+
+    if samplefolder.chars().count() > 0 {
+        samples_dict = find_wav_files(&samplefolder);
+    };
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -153,7 +165,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let audio_thread = thread::spawn(move || {
         
         let options = (ptr_rb_left_clone, ptr_rb_right_clone, index_clone, 
-            samples_l_ptr_clone, samples_r_ptr_clone, samples_index_clone, path, bpm, capacity_clone);
+            samples_l_ptr_clone, samples_r_ptr_clone, samples_index_clone, path, bpm,
+            capacity_clone,
+            samples_dict
+        );
         match config.sample_format() {
             cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), options),
             cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), options),
@@ -261,7 +276,8 @@ pub fn run_audio<T>(
         Arc<AtomicUsize>,
         String,
         f32,
-        Arc<AtomicU32>
+        Arc<AtomicU32>,
+        HashMap<String, (&'static [f32], usize, usize)>,
     ),
 
 ) -> Result<(), anyhow::Error>
@@ -278,6 +294,7 @@ where
     let path = options.6;
     let bpm = options.7;
     let capacity = options.8;
+    let dict = options.9;
     
     let mut last_modified_time = metadata(&path)?.modified()?;
 
@@ -297,6 +314,7 @@ where
     
     engine.set_sr(sr);
     engine.set_bpm(bpm);
+    engine.samples_dict = dict;
 
     let channels = 2 as usize; //config.channels as usize;
 
