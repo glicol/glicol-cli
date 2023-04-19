@@ -294,10 +294,6 @@ where
     let _code_ptr = Arc::clone(&code_ptr);
     let _code_len = Arc::clone(&code_len);
     let _has_update = Arc::clone(&has_update);
-
-    //     let mut prev_block_pos = Arc::new(AtomicUsize::new(BLOCK_SIZE));
-
-
     
     engine.set_sr(sr);
     engine.set_bpm(bpm);
@@ -305,9 +301,8 @@ where
     let channels = 2 as usize; //config.channels as usize;
 
     let mut prev_block: [glicol_synth::Buffer::<BLOCK_SIZE>; 2] = [glicol_synth::Buffer::SILENT; 2];
-    let mut prev_block_slice = &prev_block[0..];
 
-    let ptr = unsafe { prev_block.as_mut_ptr() };
+    let ptr = prev_block.as_mut_ptr();
     let prev_block_ptr = Arc::new(AtomicPtr::<glicol_synth::Buffer<BLOCK_SIZE>>::new(ptr));
     let prev_block_len = Arc::new(AtomicUsize::new(prev_block.len()));
 
@@ -328,58 +323,43 @@ where
                 _has_update.store(false, Ordering::Release);
             };
 
-            let mut rms: Vec<f32> = vec![0.0; channels];
-
             let block_step = data.len() / channels;
+            let mut rms: Vec<f32> = vec![0.0; channels];
 
             let samples_left_ptr = samples_l_ptr_clone.load(Ordering::SeqCst);
             let samples_right_ptr = samples_r_ptr_clone.load(Ordering::SeqCst);
             
             let start_time = Instant::now();
 
-            let mut count = 0;
-
-            let mut write_samples = |block: &[glicol_synth::Buffer<BLOCK_SIZE>], sample_i: usize, i: usize, offset: usize| {
-
-                count += 1;
+            let mut write_samples = |block: &[glicol_synth::Buffer<BLOCK_SIZE>], sample_i: usize, i: usize| {
 
                 for chan in 0..channels {
 
-                    // let samples_i = samples_index_clone.load(Ordering::SeqCst);
-                    // unsafe {
-                    //     match chan {
-                    //         0 => samples_left_ptr.add(samples_i).write(block[chan][i]),
-                    //         1 => samples_right_ptr.add(samples_i).write(block[chan][i]),
-                    //         _ => panic!()
-                    //     };
-                    // };
+                    let samples_i = samples_index_clone.load(Ordering::SeqCst);
+                    unsafe {
+                        match chan {
+                            0 => samples_left_ptr.add(samples_i).write(block[chan][i]),
+                            1 => samples_right_ptr.add(samples_i).write(block[chan][i]),
+                            _ => panic!()
+                        };
+                    };
 
-                    // samples_index_clone.store( (samples_i + 1) % 200, Ordering::SeqCst);
+                    samples_index_clone.store( (samples_i + 1) % 200, Ordering::SeqCst);
 
-                    // rms[chan] += block[chan][i].powf(2.0);
+                    rms[chan] += block[chan][i].powf(2.0);
                     let value: T = T::from_sample(block[chan][i]);
-                    // let x = offset*channels + (i*channels)+chan;
                     data[sample_i*channels + chan] = value;
                 }
             };
 
             let ptr2 = prev_block_ptr.load(Ordering::Acquire);
             let len2 = prev_block_len.load(Ordering::Acquire);
-            let mut prev_block: &mut [glicol_synth::Buffer<BLOCK_SIZE>] = unsafe { std::slice::from_raw_parts_mut(ptr2, len2) };
-            // let mut prev_block: &[glicol_synth::Buffer<BLOCK_SIZE>] = unsafe { std::slice::from_raw_parts_mut(ptr2, len2) };
-            // let mut test: [Vec<f32>; 2] = [vec]; // vec![];
-
-            // for i in 0..16 {
-            //     print!("{}", prev_block[0][i]);
-            // }
-
-            println!("new call");
+            let prev_block: &mut [glicol_synth::Buffer<BLOCK_SIZE>] = unsafe { std::slice::from_raw_parts_mut(ptr2, len2) };
 
             let mut writes = 0;
 
-            // println!("writing prev {}", BLOCK_SIZE-prev_block_pos);
             for i in prev_block_pos..BLOCK_SIZE {
-                write_samples(prev_block, writes, i, 0);
+                write_samples(prev_block, writes, i);
                 writes += 1;
             }
 
@@ -387,72 +367,59 @@ where
             while writes < block_step {
                 let (block, _err_msg) = engine.next_block(vec![]);
                 if writes + BLOCK_SIZE <= block_step {
-                    // println!("writing a whole block");
                     for i in 0..BLOCK_SIZE {
-                        write_samples(block, writes, i, 0);
+                        write_samples(block, writes, i);
                         writes += 1;
                     }
-                } else {
+            } else {
 
-                    let e = block_step - writes;
-                    // println!("writing {}", writes);
-                    // for i in 0..16 {
-                    //     print!("{}", block[0][i]);
-                    // }
-                    for i in 0..e {
-                        write_samples(block, writes, i, 0);
-                        writes += 1;
-                    }
-                    let mut i = 0;
-                    for buffer in prev_block.iter_mut() {
-                        buffer.copy_from_slice(&block[i]);
-                        i += 1;
-                    }
-
-                    // println!("{}", block[0][5]);
-                    // let &mut p = &mut prev_block[0];
-                    // p.copy_from_slice(&block[0]);
-                    // for b in prev_block {
-                    //     b.copy_from_slice(&block[0]);
-
-                    // }
-                    prev_block_pos = e;
-                    break;
+                let e = block_step - writes;
+                for i in 0..e {
+                    write_samples(block, writes, i);
+                    writes += 1;
                 }
+                let mut i = 0;
+                for buffer in prev_block.iter_mut() {
+                    buffer.copy_from_slice(&block[i]);
+                    i += 1;
+                }
+                prev_block_pos = e;
+                break;
             }
+        }
 
 
-            let elapsed_time = start_time.elapsed().as_nanos() as f32;
-            let allowed_ns = block_step as f32 * 1_000_000_000.0 / sr as f32;
-            let perc = elapsed_time / allowed_ns;
-            capacity.store( perc.to_bits(), Ordering::Release);
+        let elapsed_time = start_time.elapsed().as_nanos() as f32;
+        let allowed_ns = block_step as f32 * 1_000_000_000.0 / sr as f32;
+        let perc = elapsed_time / allowed_ns;
+        capacity.store( perc.to_bits(), Ordering::Release);
 
-            rms = rms.into_iter().map(|x| (x / block_step as f32).sqrt() ).collect();
-            // left rms[0] right rms[1]
+        rms = rms.into_iter().map(|x| (x / block_step as f32).sqrt() ).collect();
+        // left rms[0] right rms[1]
 
-            let ptr_l = ptr_rb_left_clone.load(Ordering::SeqCst);
-            let ptr_r = ptr_rb_right_clone.load(Ordering::SeqCst);
-            
-            // let len = RB_SIZE;
-            let idx = index_clone.load(Ordering::SeqCst);
-            unsafe {
-                ptr_l.add(idx).write(rms[0]);
-                ptr_r.add(idx).write(rms[1]);
-            };
-            index_clone.store( (idx + 1) % RB_SIZE, Ordering::SeqCst); // from 0, 1, 2, RB_SIZE-1;
-        },
-        err_fn,
-        None,
-    )?;
-    stream.play()?;
+        let ptr_l = ptr_rb_left_clone.load(Ordering::SeqCst);
+        let ptr_r = ptr_rb_right_clone.load(Ordering::SeqCst);
+        
+        // let len = RB_SIZE;
+        let idx = index_clone.load(Ordering::SeqCst);
+        unsafe {
+            ptr_l.add(idx).write(rms[0]);
+            ptr_r.add(idx).write(rms[1]);
+        };
+        index_clone.store( (idx + 1) % RB_SIZE, Ordering::SeqCst); // from 0, 1, 2, RB_SIZE-1;
+    },
+    err_fn,
+    None,
+)?;
+stream.play()?;
 
-    loop {
-        std::thread::sleep(Duration::from_millis(8));
-        let modified_time = metadata(&path)?.modified()?;
+loop {
+    std::thread::sleep(Duration::from_millis(8));
+    let modified_time = metadata(&path)?.modified()?;
 
-        if modified_time != last_modified_time || has_update.load(Ordering::SeqCst) {
-            last_modified_time = modified_time;
-            let file = File::open(&path)?;
+    if modified_time != last_modified_time || has_update.load(Ordering::SeqCst) {
+        last_modified_time = modified_time;
+        let file = File::open(&path)?;
             let reader = BufReader::new(file);
             code = "".to_owned();
             for line in reader.lines() {
