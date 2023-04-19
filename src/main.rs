@@ -306,14 +306,14 @@ where
     let prev_block_ptr = Arc::new(AtomicPtr::<glicol_synth::Buffer<BLOCK_SIZE>>::new(ptr));
     let prev_block_len = Arc::new(AtomicUsize::new(prev_block.len()));
 
-    let mut prev_block_pos: usize = BLOCK_SIZE; //  = Arc::new(AtomicUsize::new(BLOCK_SIZE));
+    let mut prev_block_pos: usize = BLOCK_SIZE;
 
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
     let stream = device.build_output_stream(
         config,
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-            
+
             if _has_update.load(Ordering::Acquire) {
                 let ptr = _code_ptr.load(Ordering::Acquire);
                 let len = _code_len.load(Ordering::Acquire);
@@ -352,9 +352,9 @@ where
                 }
             };
 
-            let ptr2 = prev_block_ptr.load(Ordering::Acquire);
-            let len2 = prev_block_len.load(Ordering::Acquire);
-            let prev_block: &mut [glicol_synth::Buffer<BLOCK_SIZE>] = unsafe { std::slice::from_raw_parts_mut(ptr2, len2) };
+            let ptr = prev_block_ptr.load(Ordering::Acquire);
+            let len = prev_block_len.load(Ordering::Acquire);
+            let prev_block: &mut [glicol_synth::Buffer<BLOCK_SIZE>] = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
 
             let mut writes = 0;
 

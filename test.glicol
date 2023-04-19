@@ -9,5 +9,3 @@
 // >> hh 0.02 >> mul 0.4
 
 out: mix ~t.. >> mul 1 >> plate 0.1
-
-
