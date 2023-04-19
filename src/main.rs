@@ -287,25 +287,38 @@ where
 
     let mut code = String::new();
     let ptr = unsafe { code.as_bytes_mut().as_mut_ptr() };
-    let code_ptr= Arc::new(AtomicPtr::<u8>::new(ptr));
+    let code_ptr = Arc::new(AtomicPtr::<u8>::new(ptr));
     let code_len = Arc::new(AtomicUsize::new(code.len()));
     let has_update = Arc::new(AtomicBool::new(true));
 
     let _code_ptr = Arc::clone(&code_ptr);
     let _code_len = Arc::clone(&code_len);
     let _has_update = Arc::clone(&has_update);
+
+    //     let mut prev_block_pos = Arc::new(AtomicUsize::new(BLOCK_SIZE));
+
+
     
     engine.set_sr(sr);
     engine.set_bpm(bpm);
 
     let channels = 2 as usize; //config.channels as usize;
 
+    let mut prev_block: [glicol_synth::Buffer::<BLOCK_SIZE>; 2] = [glicol_synth::Buffer::SILENT; 2];
+    let mut prev_block_slice = &prev_block[0..];
+
+    let ptr = unsafe { prev_block.as_mut_ptr() };
+    let prev_block_ptr = Arc::new(AtomicPtr::<glicol_synth::Buffer<BLOCK_SIZE>>::new(ptr));
+    let prev_block_len = Arc::new(AtomicUsize::new(prev_block.len()));
+
+    let mut prev_block_pos: usize = BLOCK_SIZE; //  = Arc::new(AtomicUsize::new(BLOCK_SIZE));
+
     let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
     let stream = device.build_output_stream(
         config,
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-        
+            
             if _has_update.load(Ordering::Acquire) {
                 let ptr = _code_ptr.load(Ordering::Acquire);
                 let len = _code_len.load(Ordering::Acquire);
@@ -315,37 +328,99 @@ where
                 _has_update.store(false, Ordering::Release);
             };
 
-            let block_step = data.len() / channels;
-            let blocks_needed = block_step / BLOCK_SIZE;
-            let block_step = channels * BLOCK_SIZE;
             let mut rms: Vec<f32> = vec![0.0; channels];
+
+            let block_step = data.len() / channels;
 
             let samples_left_ptr = samples_l_ptr_clone.load(Ordering::SeqCst);
             let samples_right_ptr = samples_r_ptr_clone.load(Ordering::SeqCst);
             
             let start_time = Instant::now();
 
-            for current_block in 0..blocks_needed {
+            let mut count = 0;
 
+            let mut write_samples = |block: &[glicol_synth::Buffer<BLOCK_SIZE>], sample_i: usize, i: usize, offset: usize| {
+
+                count += 1;
+
+                for chan in 0..channels {
+
+                    // let samples_i = samples_index_clone.load(Ordering::SeqCst);
+                    // unsafe {
+                    //     match chan {
+                    //         0 => samples_left_ptr.add(samples_i).write(block[chan][i]),
+                    //         1 => samples_right_ptr.add(samples_i).write(block[chan][i]),
+                    //         _ => panic!()
+                    //     };
+                    // };
+
+                    // samples_index_clone.store( (samples_i + 1) % 200, Ordering::SeqCst);
+
+                    // rms[chan] += block[chan][i].powf(2.0);
+                    let value: T = T::from_sample(block[chan][i]);
+                    // let x = offset*channels + (i*channels)+chan;
+                    data[sample_i*channels + chan] = value;
+                }
+            };
+
+            let ptr2 = prev_block_ptr.load(Ordering::Acquire);
+            let len2 = prev_block_len.load(Ordering::Acquire);
+            let mut prev_block: &mut [glicol_synth::Buffer<BLOCK_SIZE>] = unsafe { std::slice::from_raw_parts_mut(ptr2, len2) };
+            // let mut prev_block: &[glicol_synth::Buffer<BLOCK_SIZE>] = unsafe { std::slice::from_raw_parts_mut(ptr2, len2) };
+            // let mut test: [Vec<f32>; 2] = [vec]; // vec![];
+
+            // for i in 0..16 {
+            //     print!("{}", prev_block[0][i]);
+            // }
+
+            println!("new call");
+
+            let mut writes = 0;
+
+            // println!("writing prev {}", BLOCK_SIZE-prev_block_pos);
+            for i in prev_block_pos..BLOCK_SIZE {
+                write_samples(prev_block, writes, i, 0);
+                writes += 1;
+            }
+
+            prev_block_pos = BLOCK_SIZE;
+            while writes < block_step {
                 let (block, _err_msg) = engine.next_block(vec![]);
-                for i in 0..BLOCK_SIZE {
-                    for chan in 0..channels {
-                        let samples_i = samples_index_clone.load(Ordering::SeqCst);
-                        unsafe {
-                            match chan {
-                                0 => samples_left_ptr.add(samples_i).write(block[chan][i]),
-                                1 => samples_right_ptr.add(samples_i).write(block[chan][i]),
-                                _ => panic!()
-                            };
-                        };
-                        samples_index_clone.store( (samples_i + 1) % 200, Ordering::SeqCst);
-
-                        rms[chan] += block[chan][i].powf(2.0);
-                        let value: T = T::from_sample(block[chan][i]);
-                        data[(i*channels+chan)+(current_block)*block_step] = value;
+                if writes + BLOCK_SIZE <= block_step {
+                    // println!("writing a whole block");
+                    for i in 0..BLOCK_SIZE {
+                        write_samples(block, writes, i, 0);
+                        writes += 1;
                     }
+                } else {
+
+                    let e = block_step - writes;
+                    // println!("writing {}", writes);
+                    // for i in 0..16 {
+                    //     print!("{}", block[0][i]);
+                    // }
+                    for i in 0..e {
+                        write_samples(block, writes, i, 0);
+                        writes += 1;
+                    }
+                    let mut i = 0;
+                    for buffer in prev_block.iter_mut() {
+                        buffer.copy_from_slice(&block[i]);
+                        i += 1;
+                    }
+
+                    // println!("{}", block[0][5]);
+                    // let &mut p = &mut prev_block[0];
+                    // p.copy_from_slice(&block[0]);
+                    // for b in prev_block {
+                    //     b.copy_from_slice(&block[0]);
+
+                    // }
+                    prev_block_pos = e;
+                    break;
                 }
             }
+
 
             let elapsed_time = start_time.elapsed().as_nanos() as f32;
             let allowed_ns = block_step as f32 * 1_000_000_000.0 / sr as f32;

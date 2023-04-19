@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1.0"
 clap = { version = "4.1.8", features = ["derive"] }
 glicol = "0.13.1"
+glicol_synth = "0.13.1"
 cpal =  "0.15.0"
 # chrono = "0.4.23"
 crossterm = "*"

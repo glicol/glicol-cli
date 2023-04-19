@@ -526,6 +526,7 @@ dependencies = [
  "cpal",
  "crossterm",
  "glicol",
+ "glicol_synth",
  "tui",
 ]
 
