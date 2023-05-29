@@ -8,12 +8,15 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.1.8", features = ["derive"] }
-glicol = "0.13.1"
+glicol = { version = "0.13.1", features = ["use-samples"] }
 glicol_synth = "0.13.1"
 cpal =  "0.15.0"
 # chrono = "0.4.23"
 crossterm = "*"
 tui = "*"
+symphonia = { version = "0.5.2", features = ["wav"] }
+rayon = "1.7.0"
+walkdir = "2.3.3"
 # dasp_ring_buffer = "0.11.0"
 
 [features]
