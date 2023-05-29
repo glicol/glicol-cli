@@ -1,3 +1,5 @@
+mod samples;
+
 use std::fs::{File, metadata};
 use std::io::{BufRead, BufReader};
 use std::time::{Instant, Duration}; // , SystemTime, UNIX_EPOCH
@@ -284,6 +286,7 @@ where
     let sr = config.sample_rate.0 as usize;
 
     let mut engine = Engine::<BLOCK_SIZE>::new();
+    samples::load_samples_from_env(&mut engine);
 
     let mut code = String::new();
     let ptr = unsafe { code.as_bytes_mut().as_mut_ptr() };
