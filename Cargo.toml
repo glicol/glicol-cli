@@ -6,24 +6,24 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0"
-clap = { version = "4.1.8", features = ["derive"] }
-glicol = { version = "0.13.1", features = ["use-samples"] }
-glicol_synth = "0.13.1"
-cpal =  "0.15.0"
+anyhow = "1.0.75"
+clap = { version = "4.4.8", features = ["derive"] }
+glicol = { version = "0.13.2", features = ["use-samples"] }
+glicol_synth = "0.13.2"
+cpal = "0.15.2"
 # chrono = "0.4.23"
-crossterm = "*"
-tui = "*"
-symphonia = { version = "0.5.2", features = ["wav"] }
-rayon = "1.7.0"
-walkdir = "2.3.3"
+crossterm = "0.27.0"
+ratatui = "0.24.0"
+symphonia = { version = "0.5.3", features = ["wav"] }
+rayon = "1.8.0"
+walkdir = "2.4.0"
 # dasp_ring_buffer = "0.11.0"
 
 [features]
 default = []
 
 [profile.release]
-opt-level = 'z'     # Optimize for size.
-lto = true          # Enable Link Time Optimization
-codegen-units = 1   # Reduce number of codegen units to increase optimizations.
-panic = 'abort'     # Abort on panic
+opt-level = 'z'   # Optimize for size.
+lto = true        # Enable Link Time Optimization
+codegen-units = 1 # Reduce number of codegen units to increase optimizations.
+panic = 'abort'   # Abort on panic

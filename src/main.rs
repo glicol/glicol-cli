@@ -19,7 +19,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use tui::{
+use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
     style::{Color, Style, Modifier},
@@ -321,7 +321,7 @@ where
                 let ptr = _code_ptr.load(Ordering::Acquire);
                 let len = _code_len.load(Ordering::Acquire);
                 let encoded:&[u8] = unsafe { std::slice::from_raw_parts(ptr, len) };
-                let code = std::str::from_utf8(encoded.clone()).unwrap().to_owned();
+                let code = std::str::from_utf8(encoded).unwrap().to_owned();
                 engine.update_with_code(&code);
                 _has_update.store(false, Ordering::Release);
             };
@@ -444,10 +444,10 @@ loop {
     }
 }
 
-fn ui<B: Backend>(
-    f: &mut Frame<B>, 
-    left: &Arc<AtomicPtr<f32>>, 
-    right: &Arc<AtomicPtr<f32>>, 
+fn ui(
+    f: &mut Frame,
+    left: &Arc<AtomicPtr<f32>>,
+    right: &Arc<AtomicPtr<f32>>,
     index: &Arc<AtomicUsize>,
     // use_scope: bool
 ) {
@@ -496,9 +496,8 @@ fn ui<B: Backend>(
     f.render_widget(sparkline, chunks[1]);
 }
 
-
-fn ui2<B: Backend>(
-    f: &mut Frame<B>, 
+fn ui2(
+    f: &mut Frame,
     samples_l: &Arc<AtomicPtr<f32>>, // block step length
     samples_r: &Arc<AtomicPtr<f32>>,
     frame_index: &Arc<AtomicUsize>,
