@@ -1,0 +1,24 @@
+~t1: speed 4.0 >> seq 60 62 61 60 >> hh 0.02 >> mul 1.0
+~t2: speed 4.0 >> seq _ 60 >> bd 0.1 >> mul 1.0
+
+~env: ~seq >> envperc 0.001 0.1
+
+~seq: speed 2.0 >> seq 60 _60 _60 _60
+>> mul 0.3
+
+~pitch: ~seq >> mul 261.1
+~pitch2: ~pitch >> mul 1.01
+
+~osc1: saw ~pitch >> mul 0.4
+~osc2: squ ~pitch2 >> mul 0.5
+
+~t3: mix ~osc.. >> mul ~env >> lpf ~mod 3.0 >> mul 1.0
+~mod: sin 0.1 >> mul 700 >> add ~mod2
+~mod2: sin 0.35 >> mul ~cutoff >> add 1200
+
+~cutoff: constsig 300
+~amp: constsig 0.125 >> mul 0.2
+~t4: saw 50 >> lpf ~cutoff 1.0 >> mul ~amp
+~t5: saw 52 >> lpf ~cutoff 1.0 >> mul ~amp
+~t6: saw 54 >> lpf ~cutoff 1.0 >> mul ~amp
+o: mix ~t.. >> mul 1.0 >> plate 0.1
