@@ -12,20 +12,21 @@ pub use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::widgets::{List, ListItem, ListState};
 pub use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
-    text::Span,
-    widgets::{Axis, Chart, Dataset, GraphType},
-    widgets::{Block, Borders, Gauge, Sparkline},
+    text::{Line, Span, Text},
+    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Paragraph, Sparkline, Wrap},
     Frame, Terminal,
 };
 
-use crate::RB_SIZE;
+use crate::{recent_lines::ShareableRecentLinesBuffer, RB_SIZE};
 
-pub fn run_app<B: Backend>(
+pub(crate) fn run_app<B: Backend>(
+    console_buffer: ShareableRecentLinesBuffer,
     terminal: &mut Terminal<B>,
     tick_rate: Duration,
     samples_l_ptr: Arc<AtomicPtr<f32>>,
@@ -47,6 +48,7 @@ pub fn run_app<B: Backend>(
                 &sampels_index,
                 &info,
                 &capacity,
+                &console_buffer,
             )
         })?;
 
@@ -69,13 +71,14 @@ pub fn run_app<B: Backend>(
     }
 }
 
-pub fn ui(
+fn ui(
     f: &mut Frame,
     samples_l: &Arc<AtomicPtr<f32>>, // block step length
     samples_r: &Arc<AtomicPtr<f32>>,
     frame_index: &Arc<AtomicUsize>,
     info: &str,
     capacity: &Arc<AtomicU32>, // use_scope: bool
+    console_buffer: &ShareableRecentLinesBuffer,
 ) {
     let mut data = [0.0; RB_SIZE];
     let mut data2 = [0.0; RB_SIZE];
@@ -108,7 +111,14 @@ pub fn ui(
     let size = f.size();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(10), Constraint::Percentage(90)].as_ref())
+        .constraints(
+            [
+                Constraint::Percentage(10),
+                Constraint::Percentage(80),
+                Constraint::Min(4),
+            ]
+            .as_ref(),
+        )
         .split(size);
 
     let cap = capacity.load(Ordering::Acquire);
@@ -190,4 +200,23 @@ pub fn ui(
                 .bounds([-1., 1.]),
         );
     f.render_widget(chart, chunks[1]);
+
+    render_console(f, chunks[2], console_buffer);
+}
+
+fn render_console(f: &mut Frame<'_>, area: Rect, console_buffer: &ShareableRecentLinesBuffer) {
+    let items = console_buffer
+        .0
+        .lock()
+        .expect("poisoned lock")
+        .read()
+        .into_iter()
+        .map(Line::raw)
+        .map(ListItem::new)
+        .collect::<Vec<_>>();
+
+    let list = List::new(items).block(Block::default().title("console").borders(Borders::TOP));
+    let mut state = ListState::default().with_selected(Some(list.len()));
+
+    f.render_stateful_widget(list, area, &mut state);
 }

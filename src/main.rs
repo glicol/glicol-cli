@@ -1,3 +1,4 @@
+mod recent_lines;
 mod samples;
 mod tui;
 
@@ -61,6 +62,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let scope = args.scope;
     let device = args.device;
     let bpm = args.bpm;
+
+    // keep logs
+    const RECENT_LINES_COUNT: usize = 100;
+    let console_buffer = recent_lines::register_tracer(RECENT_LINES_COUNT);
 
     // setup terminal
     enable_raw_mode()?;
@@ -168,6 +173,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let tick_rate = Duration::from_millis(16);
     let res = run_app(
+        console_buffer,
         &mut terminal,
         tick_rate,
         samples_l_ptr,
