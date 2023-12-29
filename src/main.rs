@@ -2,6 +2,7 @@ mod recent_lines;
 mod samples;
 mod tui;
 
+use tracing::{error, info};
 use tui::*;
 
 use std::error::Error;
@@ -152,7 +153,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             bpm,
             capacity_clone,
         );
-        match config.sample_format() {
+        if let Err(e) = match config.sample_format() {
             cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), options),
             cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), options),
             // cpal::SampleFormat::I24 => run::<I24>(&device, &config.into()),
@@ -168,6 +169,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), options),
             cpal::SampleFormat::F64 => run_audio::<f64>(&device, &config.into(), options),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
+        } {
+            error!("run audio: {e:#}")
         }
     });
 
@@ -258,7 +261,7 @@ where
 
     let mut prev_block_pos: usize = BLOCK_SIZE;
 
-    let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+    let err_fn = |err| error!("an error occurred on stream: {err}");
 
     let stream = device.build_output_stream(
         config,
@@ -270,6 +273,10 @@ where
                 let code = std::str::from_utf8(encoded).unwrap().to_owned();
                 engine.update_with_code(&code);
                 _has_update.store(false, Ordering::Release);
+
+                if let Err(e) = engine.update() {
+                    error!("update engine: {e:?}");
+                }
             };
 
             let block_step = data.len() / channels;
@@ -368,6 +375,8 @@ where
         let modified_time = metadata(&path)?.modified()?;
 
         if modified_time != last_modified_time || has_update.load(Ordering::SeqCst) {
+            info!("modified file, loading code");
+
             last_modified_time = modified_time;
             let file = File::open(&path)?;
             let reader = BufReader::new(file);

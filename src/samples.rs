@@ -7,6 +7,7 @@ use symphonia::core::{
     audio::Signal, codecs::DecoderOptions, formats::FormatReader, io::MediaSourceStream,
     probe::Hint,
 };
+use tracing::error;
 
 pub fn load_samples_from_env(engine: &mut Engine<BLOCK_SIZE>) {
     let key = "GLICOL_CLI_SAMPLES_PATH";
@@ -14,7 +15,7 @@ pub fn load_samples_from_env(engine: &mut Engine<BLOCK_SIZE>) {
     if let Some(paths) = std::env::var_os(key) {
         for path in std::env::split_paths(&paths) {
             if let Err(error) = load_samples_from_dir(engine, &path) {
-                eprintln!("failed to load samples from {:?}, reason: {}", path, error);
+                error!(?path, "failed to load samples: {error:#}");
             }
         }
     }
