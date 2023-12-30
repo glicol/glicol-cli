@@ -1,23 +1,25 @@
 mod recent_lines;
 mod samples;
 mod tui;
+mod watcher;
 
-use tracing::{error, info};
 use tui::*;
+use watcher::watch_path;
 
 use std::error::Error;
-use std::fs::{self, metadata};
+use std::path::Path;
 use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 use std::sync::mpsc::TryRecvError;
-use std::sync::Arc;
+use std::sync::{self, Arc};
 use std::time::{Duration, Instant}; // , SystemTime, UNIX_EPOCH
-use std::{io, sync, thread}; // use std::time::{Instant};
+use std::{io, thread}; // use std::time::{Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
 use glicol::Engine;
+use tracing::error;
 
 pub const RB_SIZE: usize = 200;
 pub const BLOCK_SIZE: usize = 128;
@@ -144,12 +146,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let info: String = format!("{:?} {:?}", device.name()?.clone(), config.clone());
 
+    // get file updates, keep watching until the end
+    let (_watcher, code_updates) = watch_path(Path::new(&path)).context("watch path")?;
+
     let audio_thread = thread::spawn(move || {
         let options = (
             samples_l_ptr_clone,
             samples_r_ptr_clone,
             samples_index_clone,
-            path,
+            code_updates,
             bpm,
             capacity_clone,
         );
@@ -213,7 +218,7 @@ pub fn run_audio<T>(
         Arc<AtomicPtr<f32>>,
         Arc<AtomicPtr<f32>>,
         Arc<AtomicUsize>,
-        String,
+        sync::mpsc::Receiver<String>,
         f32,
         Arc<AtomicU32>,
     ),
@@ -227,18 +232,14 @@ where
     let samples_l_ptr_clone = options.0;
     let samples_r_ptr_clone = options.1;
     let samples_index_clone = options.2;
-    let path = options.3;
+    let code_updates = options.3;
     let bpm = options.4;
     let capacity = options.5;
-
-    let mut last_modified_time = metadata(&path)?.modified()?;
 
     let sr = config.sample_rate.0 as usize;
 
     let mut engine = Engine::<BLOCK_SIZE>::new();
     samples::load_samples_from_env(&mut engine);
-
-    let (code_changer, code_updates) = sync::mpsc::channel::<String>();
 
     engine.set_sr(sr);
     engine.set_bpm(bpm);
@@ -364,20 +365,6 @@ where
     stream.play()?;
 
     loop {
-        std::thread::sleep(Duration::from_millis(8));
-        let modified_time = metadata(&path)?.modified()?;
-
-        if modified_time != last_modified_time {
-            info!("modified file, loading code");
-
-            // FIXME TTCTTU
-            let code = fs::read_to_string(&path).context("read file")?;
-            last_modified_time = modified_time;
-
-            if code_changer.send(code).is_err() {
-                // no one interested in code changes anymore
-                return Ok(());
-            }
-        }
+        thread::park() // wait forever
     }
 }
