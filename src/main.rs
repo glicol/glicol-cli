@@ -273,10 +273,6 @@ where
                 let code = std::str::from_utf8(encoded).unwrap().to_owned();
                 engine.update_with_code(&code);
                 _has_update.store(false, Ordering::Release);
-
-                if let Err(e) = engine.update() {
-                    error!("update engine: {e:?}");
-                }
             };
 
             let block_step = data.len() / channels;
@@ -321,7 +317,15 @@ where
 
             prev_block_pos = BLOCK_SIZE;
             while writes < block_step {
-                let (block, _err_msg) = engine.next_block(vec![]);
+                let (block, raw_err) = engine.next_block(vec![]);
+                if raw_err[0] != 0 {
+                    let raw_msg = Vec::from(&raw_err[1..]);
+                    match String::from_utf8(raw_msg) {
+                        Ok(msg) => error!("get next block of engine: {msg}"),
+                        Err(e) => error!("got error from engine but unable to decode it: {e}"),
+                    }
+                }
+
                 if writes + BLOCK_SIZE <= block_step {
                     for i in 0..BLOCK_SIZE {
                         write_samples(block, writes, i);
