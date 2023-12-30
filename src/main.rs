@@ -1,6 +1,8 @@
+mod recent_lines;
 mod samples;
 mod tui;
 
+use tracing::{error, info};
 use tui::*;
 
 use std::error::Error;
@@ -61,6 +63,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let scope = args.scope;
     let device = args.device;
     let bpm = args.bpm;
+
+    // keep logs
+    const RECENT_LINES_COUNT: usize = 100;
+    let console_buffer = recent_lines::register_tracer(RECENT_LINES_COUNT);
 
     // setup terminal
     enable_raw_mode()?;
@@ -147,7 +153,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             bpm,
             capacity_clone,
         );
-        match config.sample_format() {
+        if let Err(e) = match config.sample_format() {
             cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), options),
             cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), options),
             // cpal::SampleFormat::I24 => run::<I24>(&device, &config.into()),
@@ -163,11 +169,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), options),
             cpal::SampleFormat::F64 => run_audio::<f64>(&device, &config.into(), options),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
+        } {
+            error!("run audio: {e:#}")
         }
     });
 
     let tick_rate = Duration::from_millis(16);
     let res = run_app(
+        console_buffer,
         &mut terminal,
         tick_rate,
         samples_l_ptr,
@@ -252,7 +261,7 @@ where
 
     let mut prev_block_pos: usize = BLOCK_SIZE;
 
-    let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+    let err_fn = |err| error!("an error occurred on stream: {err}");
 
     let stream = device.build_output_stream(
         config,
@@ -308,7 +317,15 @@ where
 
             prev_block_pos = BLOCK_SIZE;
             while writes < block_step {
-                let (block, _err_msg) = engine.next_block(vec![]);
+                let (block, raw_err) = engine.next_block(vec![]);
+                if raw_err[0] != 0 {
+                    let raw_msg = Vec::from(&raw_err[1..]);
+                    match String::from_utf8(raw_msg) {
+                        Ok(msg) => error!("get next block of engine: {msg}"),
+                        Err(e) => error!("got error from engine but unable to decode it: {e}"),
+                    }
+                }
+
                 if writes + BLOCK_SIZE <= block_step {
                     for i in 0..BLOCK_SIZE {
                         write_samples(block, writes, i);
@@ -362,6 +379,8 @@ where
         let modified_time = metadata(&path)?.modified()?;
 
         if modified_time != last_modified_time || has_update.load(Ordering::SeqCst) {
+            info!("modified file, loading code");
+
             last_modified_time = modified_time;
             let file = File::open(&path)?;
             let reader = BufReader::new(file);
