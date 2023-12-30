@@ -63,11 +63,3 @@ Start live coding. Edit `test.glicol` with your favourite editor:
 
 out: mix ~t.. >> plate 0.1
 ```
-
-## Todos
-
-- [x] Remove unnecessary print
-- [ ] Support sample adding
-- [ ] Error handling (so far when there is an error, the previous music continues but no report)
-- [ ] Linux/Windows test; PR welcomed!
-- [ ] Improve TUI
