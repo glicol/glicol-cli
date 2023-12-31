@@ -1,23 +1,25 @@
 mod recent_lines;
 mod samples;
 mod tui;
+mod watcher;
 
-use tracing::{error, info};
 use tui::*;
+use watcher::watch_path;
 
 use std::error::Error;
-use std::fs::{metadata, File};
-use std::io::{BufRead, BufReader};
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
+use std::sync::mpsc::TryRecvError;
+use std::sync::{self, Arc};
 use std::time::{Duration, Instant}; // , SystemTime, UNIX_EPOCH
 use std::{io, thread}; // use std::time::{Instant};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
 use glicol::Engine;
+use tracing::error;
 
 pub const RB_SIZE: usize = 200;
 pub const BLOCK_SIZE: usize = 128;
@@ -144,12 +146,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let info: String = format!("{:?} {:?}", device.name()?.clone(), config.clone());
 
+    // get file updates, keep watching until the end
+    let (_watcher, code_updates) = watch_path(Path::new(&path)).context("watch path")?;
+
     let audio_thread = thread::spawn(move || {
         let options = (
             samples_l_ptr_clone,
             samples_r_ptr_clone,
             samples_index_clone,
-            path,
+            code_updates,
             bpm,
             capacity_clone,
         );
@@ -213,7 +218,7 @@ pub fn run_audio<T>(
         Arc<AtomicPtr<f32>>,
         Arc<AtomicPtr<f32>>,
         Arc<AtomicUsize>,
-        String,
+        sync::mpsc::Receiver<String>,
         f32,
         Arc<AtomicU32>,
     ),
@@ -227,26 +232,14 @@ where
     let samples_l_ptr_clone = options.0;
     let samples_r_ptr_clone = options.1;
     let samples_index_clone = options.2;
-    let path = options.3;
+    let code_updates = options.3;
     let bpm = options.4;
     let capacity = options.5;
-
-    let mut last_modified_time = metadata(&path)?.modified()?;
 
     let sr = config.sample_rate.0 as usize;
 
     let mut engine = Engine::<BLOCK_SIZE>::new();
     samples::load_samples_from_env(&mut engine);
-
-    let mut code = String::new();
-    let ptr = unsafe { code.as_bytes_mut().as_mut_ptr() };
-    let code_ptr = Arc::new(AtomicPtr::<u8>::new(ptr));
-    let code_len = Arc::new(AtomicUsize::new(code.len()));
-    let has_update = Arc::new(AtomicBool::new(true));
-
-    let _code_ptr = Arc::clone(&code_ptr);
-    let _code_len = Arc::clone(&code_len);
-    let _has_update = Arc::clone(&has_update);
 
     engine.set_sr(sr);
     engine.set_bpm(bpm);
@@ -266,13 +259,10 @@ where
     let stream = device.build_output_stream(
         config,
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-            if _has_update.load(Ordering::Acquire) {
-                let ptr = _code_ptr.load(Ordering::Acquire);
-                let len = _code_len.load(Ordering::Acquire);
-                let encoded: &[u8] = unsafe { std::slice::from_raw_parts(ptr, len) };
-                let code = std::str::from_utf8(encoded).unwrap().to_owned();
-                engine.update_with_code(&code);
-                _has_update.store(false, Ordering::Release);
+            match code_updates.try_recv() {
+                Ok(code) => engine.update_with_code(&code),
+                Err(TryRecvError::Empty) => {} // nothing new
+                Err(TryRecvError::Disconnected) => panic!("code updater is gone"), // closing down
             };
 
             let block_step = data.len() / channels;
@@ -375,34 +365,6 @@ where
     stream.play()?;
 
     loop {
-        std::thread::sleep(Duration::from_millis(8));
-        let modified_time = metadata(&path)?.modified()?;
-
-        if modified_time != last_modified_time || has_update.load(Ordering::SeqCst) {
-            info!("modified file, loading code");
-
-            last_modified_time = modified_time;
-            let file = File::open(&path)?;
-            let reader = BufReader::new(file);
-            code = "".to_owned();
-            for line in reader.lines() {
-                code.push_str(&line?);
-                code.push_str("\n");
-            }
-            // let current_time = SystemTime::now();
-            // let unix_time = current_time.duration_since(UNIX_EPOCH).expect("Time went backwards");
-            // let system_time = UNIX_EPOCH + unix_time;
-            // let datetime = DateTime::<Utc>::from(system_time);
-            // println!("```");
-            // println!("\n// utc time: {} \n", datetime.format("%Y-%m-%d %H:%M:%S").to_string());
-            // println!("{}", code);
-            // println!("```");
-            code_ptr.store(
-                unsafe { code.as_bytes_mut().as_mut_ptr() },
-                Ordering::SeqCst,
-            );
-            code_len.store(code.len(), Ordering::SeqCst);
-            has_update.store(true, Ordering::SeqCst);
-        }
+        thread::park() // wait forever
     }
 }
