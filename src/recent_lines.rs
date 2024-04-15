@@ -37,8 +37,8 @@ impl RecentLinesBuffer {
     }
 
     /// Get the most recent lines
-    pub fn read(&self) -> Vec<String> {
-        self.lines.iter().cloned().collect()
+    pub fn read(&self) -> impl Iterator<Item = &String> {
+        self.lines.iter()
     }
 }
 
@@ -123,10 +123,10 @@ mod tests {
         let mut last_written = RecentLinesBuffer::new(10);
 
         write!(&mut last_written, "not ended line").unwrap();
-        assert!(last_written.read().is_empty());
+        assert!(last_written.read().next().is_none());
 
         writeln!(&mut last_written, " is now ended").unwrap();
-        assert_eq!(last_written.read(), vec!["not ended line is now ended"]);
+        assert_eq!(last_written.read().collect::<Vec<_>>(), vec!["not ended line is now ended"]);
     }
 
     #[test]
@@ -136,9 +136,9 @@ mod tests {
         writeln!(&mut last_written, "a").unwrap();
         writeln!(&mut last_written, "b").unwrap();
         writeln!(&mut last_written, "c").unwrap();
-        assert_eq!(last_written.read(), vec!["a", "b", "c"]);
+        assert_eq!(last_written.read().collect::<Vec<_>>(), vec!["a", "b", "c"]);
 
         writeln!(&mut last_written, "d").unwrap();
-        assert_eq!(last_written.read(), vec!["b", "c", "d"]);
+        assert_eq!(last_written.read().collect::<Vec<_>>(), vec!["b", "c", "d"]);
     }
 }

@@ -1,7 +1,7 @@
 use std::{
     io,
     sync::{
-        atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering},
+        atomic::Ordering,
         Arc,
     },
     time::{Duration, Instant},
@@ -18,8 +18,8 @@ pub use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
-    text::{Line, Span, Text},
-    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Paragraph, Sparkline, Wrap},
+    text::{Line, Span},
+    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
     Frame, Terminal,
 };
 
@@ -29,12 +29,9 @@ pub(crate) fn run_app<B: Backend>(
     console_buffer: ShareableRecentLinesBuffer,
     terminal: &mut Terminal<B>,
     tick_rate: Duration,
-    samples_l_ptr: Arc<AtomicPtr<f32>>,
-    samples_r_ptr: Arc<AtomicPtr<f32>>,
-    sampels_index: Arc<AtomicUsize>,
+    sample_data: Arc<crate::SampleData>,
     // use_scope: bool,
     info: String,
-    capacity: Arc<AtomicU32>,
     // right: Arc<AtomicPtr<f32>>
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
@@ -43,11 +40,8 @@ pub(crate) fn run_app<B: Backend>(
         terminal.draw(|f| {
             ui(
                 f,
-                &samples_l_ptr,
-                &samples_r_ptr,
-                &sampels_index,
+                &sample_data,
                 &info,
-                &capacity,
                 &console_buffer,
             )
         })?;
@@ -73,19 +67,16 @@ pub(crate) fn run_app<B: Backend>(
 
 fn ui(
     f: &mut Frame,
-    samples_l: &Arc<AtomicPtr<f32>>, // block step length
-    samples_r: &Arc<AtomicPtr<f32>>,
-    frame_index: &Arc<AtomicUsize>,
+    sample_data: &Arc<crate::SampleData>,
     info: &str,
-    capacity: &Arc<AtomicU32>, // use_scope: bool
     console_buffer: &ShareableRecentLinesBuffer,
 ) {
     let mut data = [0.0; RB_SIZE];
     let mut data2 = [0.0; RB_SIZE];
-    let ptr = samples_l.load(Ordering::Acquire);
-    let ptr2 = samples_r.load(Ordering::Acquire);
+    let ptr = sample_data.left_ptr.load(Ordering::Acquire);
+    let ptr2 = sample_data.right_ptr.load(Ordering::Acquire);
 
-    let mut idx = frame_index.load(Ordering::Acquire);
+    let mut idx = sample_data.index.load(Ordering::Acquire);
 
     for i in 0..RB_SIZE {
         data[RB_SIZE - 1 - i] = unsafe { ptr.add(idx).read() };
@@ -121,7 +112,7 @@ fn ui(
         )
         .split(size);
 
-    let cap = capacity.load(Ordering::Acquire);
+    let cap = sample_data.capacity.load(Ordering::Acquire);
     let portion = f32::from_bits(cap).clamp(0.0, 1.0);
     // print!(" cap {:?}, portion {:?}", cap, portion);
 
@@ -205,12 +196,13 @@ fn ui(
 }
 
 fn render_console(f: &mut Frame<'_>, area: Rect, console_buffer: &ShareableRecentLinesBuffer) {
-    let items = console_buffer
+    let guard = console_buffer
         .0
         .lock()
-        .expect("poisoned lock")
+        .expect("poisoned lock");
+
+    let items = guard
         .read()
-        .into_iter()
         .map(Line::raw)
         .map(ListItem::new)
         .collect::<Vec<_>>();
