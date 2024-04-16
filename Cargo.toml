@@ -8,13 +8,13 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.75"
 clap = { version = "4.4.8", features = ["derive"] }
-glicol = { version = "0.13.4", features = ["use-samples"] }
-glicol_synth = "0.13.4"
+glicol = { version = "0.13.4", features = ["use-samples", "use-meta"] }
+glicol_synth = { version = "0.13.4", default-features = false }
 cpal = "0.15.2"
 # chrono = "0.4.23"
-crossterm = "0.27.0"
+crossterm = { version = "0.27.0", default-features = false }
 ratatui = "0.24.0"
-symphonia = { version = "0.5.3", features = ["wav"] }
+symphonia = "0.5.3"
 notify = "6"
 rayon = "1.8.0"
 ringbuf = "0.3"

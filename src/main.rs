@@ -70,19 +70,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     const RECENT_LINES_COUNT: usize = 100;
     let console_buffer = recent_lines::register_tracer(RECENT_LINES_COUNT);
 
-    // setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
     // let mut ringbuf_l = [0.0; RB_SIZE];
     // let mut ringbuf_r = [0.0; RB_SIZE];
-    let mut samples_l = [0.0; RB_SIZE];
-    let mut samples_r = [0.0; RB_SIZE];
-    let samples_index = Arc::new(AtomicUsize::new(0));
-    let samples_index_clone = Arc::clone(&samples_index);
     // let index = Arc::new(AtomicUsize::new(0));
     // let index_clone = Arc::clone(&index);
     // let ptr_rb_left = Arc::new(AtomicPtr::<f32>::new(ringbuf_l.as_mut_ptr()));
@@ -90,16 +79,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let ptr_rb_left_clone = Arc::clone(&ptr_rb_left);
     // let ptr_rb_right_clone = Arc::clone(&ptr_rb_right);
 
-    let samples_l_ptr = Arc::new(AtomicPtr::<f32>::new(samples_l.as_mut_ptr()));
-    let samples_r_ptr = Arc::new(AtomicPtr::<f32>::new(samples_r.as_mut_ptr()));
-    let samples_l_ptr_clone = Arc::clone(&samples_l_ptr);
-    let samples_r_ptr_clone = Arc::clone(&samples_r_ptr);
+    let mut samples_l = [0.0; RB_SIZE];
+    let mut samples_r = [0.0; RB_SIZE];
 
+    let sample_data = Arc::new(SampleData {
+        left_ptr: AtomicPtr::<f32>::new(samples_l.as_mut_ptr()),
+        right_ptr: AtomicPtr::<f32>::new(samples_r.as_mut_ptr()),
+        index: AtomicUsize::new(0),
+        capacity: AtomicU32::new(0)
+    });
     // let is_stopping = Arc::new(AtomicBool::new(false));
     // let is_stopping_clone = Arc::clone(&is_stopping);
-
-    let capacity = Arc::new(AtomicU32::new(0));
-    let capacity_clone = Arc::clone(&capacity);
 
     // Conditionally compile with jack if the feature is specified.
     #[cfg(all(
@@ -149,47 +139,44 @@ fn main() -> Result<(), Box<dyn Error>> {
     // get file updates, keep watching until the end
     let (_watcher, code_updates) = watch_path(Path::new(&path)).context("watch path")?;
 
+    let sample_data_clone = sample_data.clone();
     let audio_thread = thread::spawn(move || {
-        let options = (
-            samples_l_ptr_clone,
-            samples_r_ptr_clone,
-            samples_index_clone,
-            code_updates,
-            bpm,
-            capacity_clone,
-        );
         if let Err(e) = match config.sample_format() {
-            cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), options),
-            cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), options),
+            cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), code_updates, bpm, sample_data_clone),
             // cpal::SampleFormat::I24 => run::<I24>(&device, &config.into()),
-            cpal::SampleFormat::I32 => run_audio::<i32>(&device, &config.into(), options),
+            cpal::SampleFormat::I32 => run_audio::<i32>(&device, &config.into(), code_updates, bpm, sample_data_clone),
             // cpal::SampleFormat::I48 => run::<I48>(&device, &config.into()),
-            cpal::SampleFormat::I64 => run_audio::<i64>(&device, &config.into(), options),
-            cpal::SampleFormat::U8 => run_audio::<u8>(&device, &config.into(), options),
-            cpal::SampleFormat::U16 => run_audio::<u16>(&device, &config.into(), options),
+            cpal::SampleFormat::I64 => run_audio::<i64>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::U8 => run_audio::<u8>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::U16 => run_audio::<u16>(&device, &config.into(), code_updates, bpm, sample_data_clone),
             // cpal::SampleFormat::U24 => run::<U24>(&device, &config.into()),
-            cpal::SampleFormat::U32 => run_audio::<u32>(&device, &config.into(), options),
+            cpal::SampleFormat::U32 => run_audio::<u32>(&device, &config.into(), code_updates, bpm, sample_data_clone),
             // cpal::SampleFormat::U48 => run::<U48>(&device, &config.into()),
-            cpal::SampleFormat::U64 => run_audio::<u64>(&device, &config.into(), options),
-            cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), options),
-            cpal::SampleFormat::F64 => run_audio::<f64>(&device, &config.into(), options),
+            cpal::SampleFormat::U64 => run_audio::<u64>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::F64 => run_audio::<f64>(&device, &config.into(), code_updates, bpm, sample_data_clone),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
         } {
             error!("run audio: {e:#}")
         }
     });
 
+    // setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
     let tick_rate = Duration::from_millis(16);
     let res = run_app(
         console_buffer,
         &mut terminal,
         tick_rate,
-        samples_l_ptr,
-        samples_r_ptr,
-        samples_index,
+        sample_data,
         // scope,
         info,
-        capacity,
     );
 
     // restore terminal
@@ -207,35 +194,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// , play_audio: Arc<AtomicBool>
-pub fn run_audio<T>(
+struct SampleData {
+    left_ptr: AtomicPtr<f32>,
+    right_ptr: AtomicPtr<f32>,
+    index: AtomicUsize,
+    capacity: AtomicU32
+}
+
+fn run_audio<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
-    options: (
-        // Arc<AtomicPtr<f32>>,
-        // Arc<AtomicPtr<f32>>,
-        // Arc<AtomicUsize>,
-        Arc<AtomicPtr<f32>>,
-        Arc<AtomicPtr<f32>>,
-        Arc<AtomicUsize>,
-        sync::mpsc::Receiver<String>,
-        f32,
-        Arc<AtomicU32>,
-    ),
+    code_updates: sync::mpsc::Receiver<String>,
+    bpm: f32,
+    sample_data: Arc<SampleData>
 ) -> Result<(), anyhow::Error>
 where
     T: SizedSample + FromSample<f32>,
 {
-    // let ptr_rb_left_clone = options.0;
-    // let ptr_rb_right_clone = options.1;
-    // let index_clone = options.2;
-    let samples_l_ptr_clone = options.0;
-    let samples_r_ptr_clone = options.1;
-    let samples_index_clone = options.2;
-    let code_updates = options.3;
-    let bpm = options.4;
-    let capacity = options.5;
-
     let sr = config.sample_rate.0 as usize;
 
     let mut engine = Engine::<BLOCK_SIZE>::new();
@@ -244,7 +219,7 @@ where
     engine.set_sr(sr);
     engine.set_bpm(bpm);
 
-    let channels = 2 as usize; //config.channels as usize;
+    let channels = 2_usize; //config.channels as usize;
 
     let mut prev_block: [glicol_synth::Buffer<BLOCK_SIZE>; 2] = [glicol_synth::Buffer::SILENT; 2];
 
@@ -266,17 +241,16 @@ where
             };
 
             let block_step = data.len() / channels;
-            let mut rms: Vec<f32> = vec![0.0; channels];
 
-            let samples_left_ptr = samples_l_ptr_clone.load(Ordering::SeqCst);
-            let samples_right_ptr = samples_r_ptr_clone.load(Ordering::SeqCst);
+            let samples_left_ptr = sample_data.left_ptr.load(Ordering::SeqCst);
+            let samples_right_ptr = sample_data.right_ptr.load(Ordering::SeqCst);
 
             let start_time = Instant::now();
 
             let mut write_samples =
                 |block: &[glicol_synth::Buffer<BLOCK_SIZE>], sample_i: usize, i: usize| {
                     for chan in 0..channels {
-                        let samples_i = samples_index_clone.load(Ordering::SeqCst);
+                        let samples_i = sample_data.index.load(Ordering::SeqCst);
                         unsafe {
                             match chan {
                                 0 => samples_left_ptr.add(samples_i).write(block[chan][i]),
@@ -285,9 +259,8 @@ where
                             };
                         };
 
-                        samples_index_clone.store((samples_i + 1) % 200, Ordering::SeqCst);
+                        sample_data.index.store((samples_i + 1) % 200, Ordering::SeqCst);
 
-                        rms[chan] += block[chan][i].powf(2.0);
                         let value: T = T::from_sample(block[chan][i]);
                         data[sample_i * channels + chan] = value;
                     }
@@ -327,10 +300,8 @@ where
                         write_samples(block, writes, i);
                         writes += 1;
                     }
-                    let mut i = 0;
-                    for buffer in prev_block.iter_mut() {
-                        buffer.copy_from_slice(&block[i]);
-                        i += 1;
+                    for (buffer, block) in prev_block.iter_mut().zip(block.iter()) {
+                        buffer.copy_from_slice(block);
                     }
                     prev_block_pos = e;
                     break;
@@ -340,7 +311,7 @@ where
             let elapsed_time = start_time.elapsed().as_nanos() as f32;
             let allowed_ns = block_step as f32 * 1_000_000_000.0 / sr as f32;
             let perc = elapsed_time / allowed_ns;
-            capacity.store(perc.to_bits(), Ordering::Release);
+            sample_data.capacity.store(perc.to_bits(), Ordering::Release);
 
             // rms = rms
             //     .into_iter()
