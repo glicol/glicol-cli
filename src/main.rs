@@ -125,13 +125,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let device = if device == "default" {
         host.default_output_device()
+            .expect("No default output device found")
     } else {
-        host.output_devices()?
-            .find(|x| x.name().map(|y| y == device).unwrap_or(false))
-    }
-    .expect("failed to find output device");
+        let Some(device) = host.output_devices()?.find(|x| x.name().map_or(false, |y| y == device)) else {
+            eprintln!("Couldn't find output device '{device}'. Available options are:");
+            for dev_name in host.output_devices()?.filter_map(|d| d.name().ok()) {
+                eprintln!("  {dev_name}");
+            }
+            std::process::exit(1);
+        };
+
+        device
+    };
+
     // println!("Output device: {}", device.name()?);
-    let config = device.default_output_config().unwrap();
+    let config = device.default_output_config()?;
     // println!("Default output config: {:?}", config);
 
     let info: String = format!("{:?} {:?}", device.name()?.clone(), config.clone());
