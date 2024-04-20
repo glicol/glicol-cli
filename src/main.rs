@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         left_ptr: AtomicPtr::<f32>::new(samples_l.as_mut_ptr()),
         right_ptr: AtomicPtr::<f32>::new(samples_r.as_mut_ptr()),
         index: AtomicUsize::new(0),
-        capacity: AtomicU32::new(0)
+        capacity: AtomicU32::new(0),
     });
     // let is_stopping = Arc::new(AtomicBool::new(false));
     // let is_stopping_clone = Arc::clone(&is_stopping);
@@ -127,7 +127,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         host.default_output_device()
             .expect("No default output device found")
     } else {
-        let Some(device) = host.output_devices()?.find(|x| x.name().map_or(false, |y| y == device)) else {
+        let Some(device) = host
+            .output_devices()?
+            .find(|x| x.name().map_or(false, |y| y == device))
+        else {
             eprintln!("Couldn't find output device '{device}'. Available options are:");
             for dev_name in host.output_devices()?.filter_map(|d| d.name().ok()) {
                 eprintln!("  {dev_name}");
@@ -150,20 +153,80 @@ fn main() -> Result<(), Box<dyn Error>> {
     let sample_data_clone = sample_data.clone();
     let audio_thread = thread::spawn(move || {
         if let Err(e) = match config.sample_format() {
-            cpal::SampleFormat::I8 => run_audio::<i8>(&device, &config.into(), code_updates, bpm, sample_data_clone),
-            cpal::SampleFormat::I16 => run_audio::<i16>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::I8 => run_audio::<i8>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
+            cpal::SampleFormat::I16 => run_audio::<i16>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
             // cpal::SampleFormat::I24 => run::<I24>(&device, &config.into()),
-            cpal::SampleFormat::I32 => run_audio::<i32>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::I32 => run_audio::<i32>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
             // cpal::SampleFormat::I48 => run::<I48>(&device, &config.into()),
-            cpal::SampleFormat::I64 => run_audio::<i64>(&device, &config.into(), code_updates, bpm, sample_data_clone),
-            cpal::SampleFormat::U8 => run_audio::<u8>(&device, &config.into(), code_updates, bpm, sample_data_clone),
-            cpal::SampleFormat::U16 => run_audio::<u16>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::I64 => run_audio::<i64>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
+            cpal::SampleFormat::U8 => run_audio::<u8>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
+            cpal::SampleFormat::U16 => run_audio::<u16>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
             // cpal::SampleFormat::U24 => run::<U24>(&device, &config.into()),
-            cpal::SampleFormat::U32 => run_audio::<u32>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::U32 => run_audio::<u32>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
             // cpal::SampleFormat::U48 => run::<U48>(&device, &config.into()),
-            cpal::SampleFormat::U64 => run_audio::<u64>(&device, &config.into(), code_updates, bpm, sample_data_clone),
-            cpal::SampleFormat::F32 => run_audio::<f32>(&device, &config.into(), code_updates, bpm, sample_data_clone),
-            cpal::SampleFormat::F64 => run_audio::<f64>(&device, &config.into(), code_updates, bpm, sample_data_clone),
+            cpal::SampleFormat::U64 => run_audio::<u64>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
+            cpal::SampleFormat::F32 => run_audio::<f32>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
+            cpal::SampleFormat::F64 => run_audio::<f64>(
+                &device,
+                &config.into(),
+                code_updates,
+                bpm,
+                sample_data_clone,
+            ),
             sample_format => panic!("Unsupported sample format '{sample_format}'"),
         } {
             error!("run audio: {e:#}")
@@ -206,7 +269,7 @@ struct SampleData {
     left_ptr: AtomicPtr<f32>,
     right_ptr: AtomicPtr<f32>,
     index: AtomicUsize,
-    capacity: AtomicU32
+    capacity: AtomicU32,
 }
 
 fn run_audio<T>(
@@ -214,7 +277,7 @@ fn run_audio<T>(
     config: &cpal::StreamConfig,
     code_updates: sync::mpsc::Receiver<String>,
     bpm: f32,
-    sample_data: Arc<SampleData>
+    sample_data: Arc<SampleData>,
 ) -> Result<(), anyhow::Error>
 where
     T: SizedSample + FromSample<f32>,
@@ -267,7 +330,9 @@ where
                             };
                         };
 
-                        sample_data.index.store((samples_i + 1) % 200, Ordering::SeqCst);
+                        sample_data
+                            .index
+                            .store((samples_i + 1) % 200, Ordering::SeqCst);
 
                         let value: T = T::from_sample(block[chan][i]);
                         data[sample_i * channels + chan] = value;
@@ -319,7 +384,9 @@ where
             let elapsed_time = start_time.elapsed().as_nanos() as f32;
             let allowed_ns = block_step as f32 * 1_000_000_000.0 / sr as f32;
             let perc = elapsed_time / allowed_ns;
-            sample_data.capacity.store(perc.to_bits(), Ordering::Release);
+            sample_data
+                .capacity
+                .store(perc.to_bits(), Ordering::Release);
 
             // rms = rms
             //     .into_iter()

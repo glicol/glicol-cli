@@ -1,0 +1,4 @@
+// on mac/linux your should run this in your terminal first
+// export GLICOL_CLI_SAMPLES_PATH=/path/to/your/samples
+
+a: seq 60 >> sp \some_samples

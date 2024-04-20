@@ -1,5 +1,6 @@
 use crate::BLOCK_SIZE;
 use anyhow::Context;
+use dirs;
 use glicol::Engine;
 use rayon::prelude::*;
 use std::{fs::File, path::Path};
@@ -8,6 +9,7 @@ use symphonia::core::{
     probe::Hint,
 };
 use tracing::error;
+use walkdir::WalkDir;
 
 pub fn load_samples_from_env(engine: &mut Engine<BLOCK_SIZE>) {
     let key = "GLICOL_CLI_SAMPLES_PATH";
@@ -21,13 +23,32 @@ pub fn load_samples_from_env(engine: &mut Engine<BLOCK_SIZE>) {
     }
 }
 
+fn expand_home_dir(path: &str) -> std::path::PathBuf {
+    let path_buf = if path.starts_with("~") {
+        let without_tilde = &path[1..];
+        if let Some(home_dir) = dirs::home_dir() {
+            home_dir.join(without_tilde.trim_start_matches('/'))
+        } else {
+            std::path::PathBuf::from(path)
+        }
+    } else {
+        std::path::PathBuf::from(path)
+    };
+    if path_buf.is_relative() {
+        std::env::current_dir().unwrap().join(path_buf)
+    } else {
+        path_buf
+    }
+}
+
 fn load_samples_from_dir(
     engine: &mut Engine<BLOCK_SIZE>,
     dir: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
-    let walk_dir = walkdir::WalkDir::new(dir)
+    let dir = expand_home_dir(dir.as_ref().to_str().unwrap());
+    let walk_dir = WalkDir::new(&dir)
         .min_depth(1)
-        .max_depth(2)
+        .max_depth(3)
         .into_iter()
         .filter_entry(|entry| {
             entry
@@ -40,13 +61,14 @@ fn load_samples_from_dir(
             entry.ok().filter(|entry| {
                 AsRef::<std::path::Path>::as_ref(&entry.file_name())
                     .extension()
-                    .map(|ext| ext == "wav")
+                    .map(|ext| ext == "wav" || ext == "mp3" || ext == "ogg")
                     .unwrap_or(false)
             })
         })
         .map(|entry| (entry.path().to_path_buf(), entry.depth()))
         .collect::<Vec<_>>();
-
+    // TODO: show available samples
+    // println!("Found {} samples from {:?}", walk_dir.len(), &dir);
     for (sample, name) in walk_dir
         .par_iter()
         .filter_map(|(path, depth)| {
@@ -72,6 +94,7 @@ fn load_samples_from_dir(
         .collect::<Vec<_>>()
     {
         let sample_buffer = Box::leak(sample.buffer.into_boxed_slice());
+        println!("Adding sample: {}", name);
         engine.add_sample(&name, sample_buffer, sample.channels, sample.sr);
     }
 
