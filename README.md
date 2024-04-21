@@ -33,7 +33,7 @@ glicol-cli test.glicol
 For more `OPTIONS`, call `--help` in your terminal:
 
 ```
-~ glicol-cli --help                                    
+~ glicol-cli --help
 
 Glicol cli tool. This tool will watch the changes in a .glicol file
 
@@ -56,10 +56,20 @@ Start live coding. Edit `test.glicol` with your favourite editor:
 ```
 // test.glicol
 ~t1: speed 4.0 >> seq 60 >> bd 0.2 >> mul 0.6
-    
+
 ~t2: seq 33_33_ _33 33__33 _33
 >> sawsynth 0.01 0.1
 >> mul 0.5 >> lpf 1000.0 1.0
 
 out: mix ~t.. >> plate 0.1
 ```
+
+## Load your own samples
+
+Run the line in your terminal first:
+
+`export GLICOL_CLI_SAMPLES_PATH=/path/to/your/samples`
+
+For example:
+
+`export GLICOL_CLI_SAMPLES_PATH=~/Downloads/samples`

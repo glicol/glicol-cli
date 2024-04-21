@@ -1,9 +1,6 @@
 use std::{
     io,
-    sync::{
-        atomic::Ordering,
-        Arc,
-    },
+    sync::{atomic::Ordering, Arc},
     time::{Duration, Instant},
 };
 
@@ -37,14 +34,7 @@ pub(crate) fn run_app<B: Backend>(
     let mut last_tick = Instant::now();
 
     loop {
-        terminal.draw(|f| {
-            ui(
-                f,
-                &sample_data,
-                &info,
-                &console_buffer,
-            )
-        })?;
+        terminal.draw(|f| ui(f, &sample_data, &info, &console_buffer))?;
 
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
@@ -196,10 +186,7 @@ fn ui(
 }
 
 fn render_console(f: &mut Frame<'_>, area: Rect, console_buffer: &ShareableRecentLinesBuffer) {
-    let guard = console_buffer
-        .0
-        .lock()
-        .expect("poisoned lock");
+    let guard = console_buffer.0.lock().expect("poisoned lock");
 
     let items = guard
         .read()

@@ -126,7 +126,10 @@ mod tests {
         assert!(last_written.read().next().is_none());
 
         writeln!(&mut last_written, " is now ended").unwrap();
-        assert_eq!(last_written.read().collect::<Vec<_>>(), vec!["not ended line is now ended"]);
+        assert_eq!(
+            last_written.read().collect::<Vec<_>>(),
+            vec!["not ended line is now ended"]
+        );
     }
 
     #[test]
