@@ -9,7 +9,7 @@ pub use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::widgets::{List, ListItem, ListState};
+use ratatui::{symbols::border, widgets::{Clear, List, ListItem, ListState}};
 pub use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
@@ -22,6 +22,11 @@ pub use ratatui::{
 
 use crate::{recent_lines::ShareableRecentLinesBuffer, RB_SIZE};
 
+pub enum ExitStatus {
+    KeepAudio,
+    ExitAll
+}
+
 pub(crate) fn run_app<B: Backend>(
     console_buffer: ShareableRecentLinesBuffer,
     terminal: &mut Terminal<B>,
@@ -30,7 +35,7 @@ pub(crate) fn run_app<B: Backend>(
     // use_scope: bool,
     info: String,
     // right: Arc<AtomicPtr<f32>>
-) -> io::Result<()> {
+) -> io::Result<ExitStatus> {
     let mut last_tick = Instant::now();
 
     loop {
@@ -40,10 +45,19 @@ pub(crate) fn run_app<B: Backend>(
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
 
-        if crossterm::event::poll(timeout)? {
+        if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if let KeyCode::Esc = key.code {
-                    return Ok(());
+                match key.code {
+                    KeyCode::Esc => return Ok(ExitStatus::KeepAudio),
+                    KeyCode::Char('p' | ' ') => {
+                        // this is only modified from this thread (just read from the other), so we
+                        // don't have to worry about ordering or using like a swap/exchange loop
+                        // when doing this here
+                        let old = sample_data.paused.load(Ordering::Relaxed);
+                        sample_data.paused.store(!old, Ordering::Relaxed);
+                    },
+                    KeyCode::Char('q') => return Ok(ExitStatus::ExitAll),
+                    _ => ()
                 }
             }
         }
@@ -114,7 +128,7 @@ fn ui(
     // );
 
     let label = Span::styled(
-        format!("press esc to exit tui"),
+        "press esc to exit tui, or q to exit program",
         Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::ITALIC | Modifier::BOLD),
@@ -133,7 +147,7 @@ fn ui(
     f.render_widget(gauge, chunks[0]);
 
     let x_labels = vec![Span::styled(
-        format!("[0, 200]"),
+        "[0, 200]",
         Style::default().add_modifier(Modifier::BOLD),
     )];
     let datasets = vec![
@@ -182,6 +196,38 @@ fn ui(
         );
     f.render_widget(chart, chunks[1]);
 
+    if sample_data.paused.load(Ordering::Relaxed) {
+        let frame_area = f.size();
+        let width = 10;
+        let height = 3;
+        let block_rect = Rect {
+            x: (frame_area.width - width) / 2,
+            y: (frame_area.height - height) / 2,
+            width,
+            height
+        };
+
+        let block = Block::bordered()
+            .border_set(border::DOUBLE)
+            .border_style(Style::new().fg(Color::White));
+
+        let mut label_rect = block.inner(block_rect);
+
+        f.render_widget(Clear, block_rect);
+        f.render_widget(block, block_rect);
+
+        let label = Span::styled(
+            "PAUSED",
+            Style::new()
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD)
+        );
+
+        label_rect.x += 1;
+
+        f.render_widget(label, label_rect);
+    }
+
     render_console(f, chunks[2], console_buffer);
 }
 
@@ -194,7 +240,11 @@ fn render_console(f: &mut Frame<'_>, area: Rect, console_buffer: &ShareableRecen
         .map(ListItem::new)
         .collect::<Vec<_>>();
 
-    let list = List::new(items).block(Block::default().title("console").borders(Borders::TOP));
+    let list = List::new(items).block(
+        Block::bordered()
+            .title("console")
+            .border_set(border::ROUNDED)
+    );
     let mut state = ListState::default().with_selected(Some(list.len()));
 
     f.render_stateful_widget(list, area, &mut state);

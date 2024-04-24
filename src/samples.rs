@@ -1,6 +1,5 @@
 use crate::BLOCK_SIZE;
 use anyhow::Context;
-use dirs;
 use glicol::Engine;
 use rayon::prelude::*;
 use std::{fs::File, path::Path};
@@ -24,8 +23,7 @@ pub fn load_samples_from_env(engine: &mut Engine<BLOCK_SIZE>) {
 }
 
 fn expand_home_dir(path: &str) -> std::path::PathBuf {
-    let path_buf = if path.starts_with("~") {
-        let without_tilde = &path[1..];
+    let path_buf = if let Some(without_tilde) = path.strip_prefix('~') {
         if let Some(home_dir) = dirs::home_dir() {
             home_dir.join(without_tilde.trim_start_matches('/'))
         } else {
@@ -46,7 +44,7 @@ fn load_samples_from_dir(
     dir: impl AsRef<Path>,
 ) -> anyhow::Result<()> {
     let dir = expand_home_dir(dir.as_ref().to_str().unwrap());
-    let walk_dir = WalkDir::new(&dir)
+    let walk_dir = WalkDir::new(dir)
         .min_depth(1)
         .max_depth(3)
         .into_iter()

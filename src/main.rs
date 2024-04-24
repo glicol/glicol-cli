@@ -8,7 +8,7 @@ use watcher::watch_path;
 
 use std::error::Error;
 use std::path::Path;
-use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 use std::sync::mpsc::TryRecvError;
 use std::sync::{self, Arc};
 use std::time::{Duration, Instant}; // , SystemTime, UNIX_EPOCH
@@ -87,6 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         right_ptr: AtomicPtr::<f32>::new(samples_r.as_mut_ptr()),
         index: AtomicUsize::new(0),
         capacity: AtomicU32::new(0),
+        paused: AtomicBool::new(false)
     });
     // let is_stopping = Arc::new(AtomicBool::new(false));
     // let is_stopping_clone = Arc::clone(&is_stopping);
@@ -258,9 +259,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
-    if let Err(err) = res {
-        println!("{:?}", err)
-    }
+    match res {
+        Ok(ExitStatus::ExitAll) => std::process::exit(0),
+        Ok(ExitStatus::KeepAudio) => (),
+        Err(e) => println!("{e:?}"),
+    };
     audio_thread.join().unwrap();
     Ok(())
 }
@@ -270,6 +273,7 @@ struct SampleData {
     right_ptr: AtomicPtr<f32>,
     index: AtomicUsize,
     capacity: AtomicU32,
+    paused: AtomicBool
 }
 
 fn run_audio<T>(
@@ -300,8 +304,6 @@ where
 
     let mut prev_block_pos: usize = BLOCK_SIZE;
 
-    let err_fn = |err| error!("an error occurred on stream: {err}");
-
     let stream = device.build_output_stream(
         config,
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
@@ -310,6 +312,13 @@ where
                 Err(TryRecvError::Empty) => {} // nothing new
                 Err(TryRecvError::Disconnected) => panic!("code updater is gone"), // closing down
             };
+
+            if sample_data.paused.load(Ordering::Relaxed) {
+                for d in &mut *data {
+                    *d = T::from_sample(0.);
+                }
+                return;
+            }
 
             let block_step = data.len() / channels;
 
@@ -405,7 +414,7 @@ where
             // };
             // index_clone.store((idx + 1) % RB_SIZE, Ordering::SeqCst); // from 0, 1, 2, RB_SIZE-1;
         },
-        err_fn,
+        |err| error!("an error occurred on stream: {err}"),
         None,
     )?;
     stream.play()?;
