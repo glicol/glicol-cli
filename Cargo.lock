@@ -682,14 +682,14 @@ dependencies = [
 
 [[package]]
 name = "glicol"
-version = "0.13.4"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f16e534842c3f7f95f217d7de809ddcf5a0e36decd46f4bbe6ca46f0b4c22a6"
+checksum = "6954afac8a8ac2d83c1d5d91905a347499a4ce2b6c541113b52e7669e9d292f9"
 dependencies = [
  "glicol_macros",
  "glicol_parser",
  "glicol_synth",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.3",
  "lcs-diff",
  "pest",
  "petgraph",
@@ -719,9 +719,9 @@ dependencies = [
 
 [[package]]
 name = "glicol_macros"
-version = "0.13.4"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a19d6bf9a0731afaa18044057c5ede9c07b14c71e6e058c39eade5b30591a00"
+checksum = "9883e6eb413088fe252c639e19ec9fc6e313585d1148ddf716f8b170388456e8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -730,23 +730,23 @@ dependencies = [
 
 [[package]]
 name = "glicol_parser"
-version = "0.13.4"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f63e9b504e7e36346432dba25fb7ff78e6c33fbc1b80981d8b4c4cebe45b7fcd"
+checksum = "fe6ddadb71b61e261e3483d4345d3ead7380bf563fd15056ce61d05d87232e5d"
 dependencies = [
  "fasteval",
  "glicol_macros",
  "glicol_synth",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.3",
  "pest",
  "pest_derive",
 ]
 
 [[package]]
 name = "glicol_synth"
-version = "0.13.4"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "408da86dff2130bc6de7df9eb54c946607c5a6cc134c336de3df11b32f697d20"
+checksum = "670bcad1f71f489589f18ff5019ff796d5db302f8066c3bef5ff84b2f24cc27a"
 dependencies = [
  "arrayvec",
  "dasp_interpolate",
@@ -754,7 +754,7 @@ dependencies = [
  "dasp_signal",
  "dasp_slice",
  "fasteval",
- "hashbrown 0.13.2",
+ "hashbrown 0.14.3",
  "petgraph",
  "rhai",
 ]
@@ -770,15 +770,6 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
-
-[[package]]
-name = "hashbrown"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
-dependencies = [
- "ahash",
-]
 
 [[package]]
 name = "hashbrown"
@@ -1246,19 +1237,20 @@ checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
 
 [[package]]
 name = "pest"
-version = "2.5.6"
+version = "2.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cbd939b234e95d72bc393d51788aec68aeeb5d51e748ca08ff3aad58cb722f7"
+checksum = "311fb059dee1a7b802f036316d790138c613a4e8b180c822e3925a662e9f0c95"
 dependencies = [
+ "memchr",
  "thiserror",
  "ucd-trie",
 ]
 
 [[package]]
 name = "pest_derive"
-version = "2.5.6"
+version = "2.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a81186863f3d0a27340815be8f2078dd8050b14cd71913db9fbda795e5f707d7"
+checksum = "f73541b156d32197eecda1a4014d7f868fd2bcb3c550d5386087cfba442bf69c"
 dependencies = [
  "pest",
  "pest_generator",
@@ -1266,22 +1258,22 @@ dependencies = [
 
 [[package]]
 name = "pest_generator"
-version = "2.5.6"
+version = "2.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75a1ef20bf3193c15ac345acb32e26b3dc3223aff4d77ae4fc5359567683796b"
+checksum = "c35eeed0a3fab112f75165fdc026b3913f4183133f19b49be773ac9ea966e8bd"
 dependencies = [
  "pest",
  "pest_meta",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.39",
 ]
 
 [[package]]
 name = "pest_meta"
-version = "2.5.6"
+version = "2.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e3b284b1f13a20dc5ebc90aff59a51b8d7137c221131b52a7260c08cbc1cc80"
+checksum = "2adbf29bb9776f28caece835398781ab24435585fe0d4dc1374a61db5accedca"
 dependencies = [
  "once_cell",
  "pest",
