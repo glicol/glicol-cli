@@ -9,7 +9,6 @@ pub use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{symbols::border, widgets::{Clear, List, ListItem, ListState}};
 pub use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout, Rect},
@@ -19,12 +18,16 @@ pub use ratatui::{
     widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
     Frame, Terminal,
 };
+use ratatui::{
+    symbols::border,
+    widgets::{Clear, List, ListItem, ListState},
+};
 
 use crate::{recent_lines::ShareableRecentLinesBuffer, RB_SIZE};
 
 pub enum ExitStatus {
     KeepAudio,
-    ExitAll
+    ExitAll,
 }
 
 pub(crate) fn run_app<B: Backend>(
@@ -55,9 +58,9 @@ pub(crate) fn run_app<B: Backend>(
                         // when doing this here
                         let old = sample_data.paused.load(Ordering::Relaxed);
                         sample_data.paused.store(!old, Ordering::Relaxed);
-                    },
+                    }
                     KeyCode::Char('q') => return Ok(ExitStatus::ExitAll),
-                    _ => ()
+                    _ => (),
                 }
             }
         }
@@ -204,7 +207,7 @@ fn ui(
             x: (frame_area.width - width) / 2,
             y: (frame_area.height - height) / 2,
             width,
-            height
+            height,
         };
 
         let block = Block::bordered()
@@ -218,9 +221,7 @@ fn ui(
 
         let label = Span::styled(
             "PAUSED",
-            Style::new()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD)
+            Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
         );
 
         label_rect.x += 1;
@@ -243,7 +244,7 @@ fn render_console(f: &mut Frame<'_>, area: Rect, console_buffer: &ShareableRecen
     let list = List::new(items).block(
         Block::bordered()
             .title("console")
-            .border_set(border::ROUNDED)
+            .border_set(border::ROUNDED),
     );
     let mut state = ListState::default().with_selected(Some(list.len()));
 

@@ -17,7 +17,7 @@ use std::{io, thread}; // use std::time::{Instant};
 use anyhow::{Context, Result};
 use clap::Parser;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SizedSample};
+use cpal::{FromSample, SizedSample, SupportedStreamConfig};
 use glicol::Engine;
 use tracing::error;
 
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         right_ptr: AtomicPtr::<f32>::new(samples_r.as_mut_ptr()),
         index: AtomicUsize::new(0),
         capacity: AtomicU32::new(0),
-        paused: AtomicBool::new(false)
+        paused: AtomicBool::new(false),
     });
     // let is_stopping = Arc::new(AtomicBool::new(false));
     // let is_stopping_clone = Arc::clone(&is_stopping);
@@ -144,6 +144,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // println!("Output device: {}", device.name()?);
     let config = device.default_output_config()?;
+
+    // limit to stereo
+    let config = SupportedStreamConfig::new(
+        2,
+        config.sample_rate(),
+        config.buffer_size().clone(),
+        config.sample_format(),
+    );
     // println!("Default output config: {:?}", config);
 
     let info: String = format!("{:?} {:?}", device.name()?.clone(), config.clone());
@@ -273,7 +281,7 @@ struct SampleData {
     right_ptr: AtomicPtr<f32>,
     index: AtomicUsize,
     capacity: AtomicU32,
-    paused: AtomicBool
+    paused: AtomicBool,
 }
 
 fn run_audio<T>(
