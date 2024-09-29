@@ -56,6 +56,10 @@ struct Args {
     #[arg(short, long)]
     #[allow(dead_code)]
     jack: bool,
+
+    /// Disable the TUI
+    #[arg(short = 'H', long, action = clap::ArgAction::SetTrue)]
+    headless: bool,
 }
 
 #[allow(unused_must_use)]
@@ -248,36 +252,38 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    if !args.headless {
+        // setup terminal
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
 
-    let tick_rate = Duration::from_millis(16);
-    let res = run_app(
-        console_buffer,
-        &mut terminal,
-        tick_rate,
-        sample_data,
-        // scope,
-        info,
-    );
+        let tick_rate = Duration::from_millis(16);
+        let res = run_app(
+            console_buffer,
+            &mut terminal,
+            tick_rate,
+            sample_data,
+            // scope,
+            info,
+        );
 
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-    match res {
-        Ok(ExitStatus::ExitAll) => std::process::exit(0),
-        Ok(ExitStatus::KeepAudio) => (),
-        Err(e) => println!("{e:?}"),
-    };
+        // restore terminal
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
+        match res {
+            Ok(ExitStatus::ExitAll) => std::process::exit(0),
+            Ok(ExitStatus::KeepAudio) => (),
+            Err(e) => println!("{e:?}"),
+        };
+    }
     audio_thread.join().unwrap();
     Ok(())
 }
