@@ -45,6 +45,7 @@ Arguments:
 Options:
   -b, --bpm <BPM>        Set beats per minute (BPM) [default: 120]
   -d, --device <DEVICE>  The audio device to use [default: default]
+  -H, --headless         Disable the TUI
   -h, --help             Print help
   -V, --version          Print version
 ```
@@ -73,3 +74,27 @@ Run the line in your terminal first:
 For example:
 
 `export GLICOL_CLI_SAMPLES_PATH=~/Downloads/samples`
+
+## Development
+
+If you are developing the glicol-cli source code itself, you can setup
+a convenient self-recompiling debug binary alias:
+
+ * Install
+[Just](https://github.com/casey/just?tab=readme-ov-file#readme)
+
+```sh
+cargo install just
+```
+
+ * Put the alias into your shell init (`~/.bashrc`):
+
+```
+# Point this to the Justfile found in your git clone:
+alias glicol-cli='just -f ~/git/vendor/glicol/glicol-cli/Justfile run'
+```
+
+This special `glicol-cli` alias can be run from any directory, and the
+program will automatically recompile itself before running the
+program. You can still provide `glicol-cli` command line arguments as
+normal.
