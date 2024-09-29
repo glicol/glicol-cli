@@ -6,6 +6,11 @@ mod watcher;
 use tui::*;
 use watcher::watch_path;
 
+use anyhow::{Context, Result};
+use clap::{CommandFactory, Parser};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, SizedSample, SupportedStreamConfig};
+use glicol::Engine;
 use std::error::Error;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicUsize, Ordering};
@@ -13,13 +18,8 @@ use std::sync::mpsc::TryRecvError;
 use std::sync::{self, Arc};
 use std::time::{Duration, Instant}; // , SystemTime, UNIX_EPOCH
 use std::{io, thread}; // use std::time::{Instant};
-
-use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SizedSample, SupportedStreamConfig};
-use glicol::Engine;
 use tracing::error;
+use tracing_subscriber::fmt::{format::FmtSpan, time::ChronoLocal};
 
 pub const RB_SIZE: usize = 200;
 pub const BLOCK_SIZE: usize = 128;
@@ -78,7 +78,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // keep logs
     const RECENT_LINES_COUNT: usize = 100;
-    let console_buffer = recent_lines::register_tracer(RECENT_LINES_COUNT);
 
     // let mut ringbuf_l = [0.0; RB_SIZE];
     // let mut ringbuf_r = [0.0; RB_SIZE];
@@ -252,37 +251,46 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    if !args.headless {
-        // setup terminal
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+    match args.headless {
+        true => {
+            tracing_subscriber::fmt()
+                .with_timer(ChronoLocal::new(String::from("%H:%M:%S%.3f")))
+                .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
+                .init();
+        }
+        false => {
+            // setup terminal
+            let console_buffer = recent_lines::register_tracer(RECENT_LINES_COUNT);
+            enable_raw_mode()?;
+            let mut stdout = io::stdout();
+            execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+            let backend = CrosstermBackend::new(stdout);
+            let mut terminal = Terminal::new(backend)?;
 
-        let tick_rate = Duration::from_millis(16);
-        let res = run_app(
-            console_buffer,
-            &mut terminal,
-            tick_rate,
-            sample_data,
-            // scope,
-            info,
-        );
+            let tick_rate = Duration::from_millis(16);
+            let res = run_app(
+                console_buffer,
+                &mut terminal,
+                tick_rate,
+                sample_data,
+                // scope,
+                info,
+            );
 
-        // restore terminal
-        disable_raw_mode()?;
-        execute!(
-            terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        )?;
-        terminal.show_cursor()?;
-        match res {
-            Ok(ExitStatus::ExitAll) => std::process::exit(0),
-            Ok(ExitStatus::KeepAudio) => (),
-            Err(e) => println!("{e:?}"),
-        };
+            // restore terminal
+            disable_raw_mode()?;
+            execute!(
+                terminal.backend_mut(),
+                LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
+            terminal.show_cursor()?;
+            match res {
+                Ok(ExitStatus::ExitAll) => std::process::exit(0),
+                Ok(ExitStatus::KeepAudio) => (),
+                Err(e) => println!("{e:?}"),
+            };
+        }
     }
     audio_thread.join().unwrap();
     Ok(())
