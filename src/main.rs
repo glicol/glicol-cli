@@ -15,7 +15,7 @@ use std::time::{Duration, Instant}; // , SystemTime, UNIX_EPOCH
 use std::{io, thread}; // use std::time::{Instant};
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SizedSample, SupportedStreamConfig};
 use glicol::Engine;
@@ -60,6 +60,12 @@ struct Args {
 
 #[allow(unused_must_use)]
 fn main() -> Result<(), Box<dyn Error>> {
+    // Print help screen if no args provided:
+    if std::env::args().len() == 1 {
+        Args::command().print_help()?;
+        println!();
+        return Ok(());
+    }
     let args = Args::parse();
     let path = args.file;
     // let scope = args.scope;
