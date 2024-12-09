@@ -1,6 +1,7 @@
 use std::{fs, path::Path, sync};
 
 use anyhow::{Context, Result};
+use chrono::Local;
 use notify::{
     event::{Event, EventKind, ModifyKind, RenameMode},
     RecursiveMode, Watcher,
@@ -33,7 +34,8 @@ pub(crate) fn watch_path(
                             )
                         ) =>
                 {
-                    info!("changed file, loading content");
+
+                    info!("🔥 CHANGE DETECTED AT 👉{} ✅ NOW DOING UPDATE 🚀", Local::now().format("%H:%M:%S"));
 
                     match fs::read_to_string(&path) {
                         Ok(code) => {
