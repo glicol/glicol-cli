@@ -1,3 +1,4 @@
+mod limiter;
 mod recent_lines;
 mod samples;
 mod tui;
@@ -60,6 +61,10 @@ struct Args {
     /// Disable the TUI
     #[arg(short = 'H', long, action = clap::ArgAction::SetTrue)]
     headless: bool,
+
+    /// Disable the output safety limiter (raw engine output goes to the device)
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    no_limit: bool,
 }
 
 #[allow(unused_must_use)]
@@ -75,6 +80,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let scope = args.scope;
     let device = args.device;
     let bpm = args.bpm;
+    if args.no_limit {
+        limiter::disable();
+    }
 
     // keep logs
     const RECENT_LINES_COUNT: usize = 100;
@@ -371,7 +379,7 @@ where
                             .index
                             .store((samples_i + 1) % 200, Ordering::SeqCst);
 
-                        let value: T = T::from_sample(block[chan][i]);
+                        let value: T = T::from_sample(limiter::apply(block[chan][i]));
                         data[sample_i * channels + chan] = value;
                     }
                 };
